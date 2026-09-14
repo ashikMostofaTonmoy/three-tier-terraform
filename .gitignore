@@ -1,0 +1,34 @@
+# Terraform
+# (.terraform.lock.hcl is intentionally NOT ignored — commit it, so every
+# clone resolves the exact same provider versions)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+backend.hcl
+!backend.hcl.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# generated key pairs — never commit a private key
+*.pem
+
+# dependencies / build output
+node_modules/
+frontend/dist/
+dist/
+*.tgz
+.build/
+
+# local env files
+.env
+.env.local
+
+# editor / OS
+.DS_Store
+.vscode/

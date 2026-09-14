@@ -1,0 +1,7 @@
+# Copy this file to terraform.tfvars (gitignored) before running terraform.
+# The defaults already match this course's setup, so an empty
+# terraform.tfvars (or none at all) works fine — this file exists mainly to
+# show the pattern used from lesson 04 onward, where variables really do
+# need per-student values.
+aws_region  = "ap-southeast-1"
+aws_profile = "ostad"

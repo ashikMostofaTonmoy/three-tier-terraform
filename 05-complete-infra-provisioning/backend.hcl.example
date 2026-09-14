@@ -1,0 +1,5 @@
+bucket         = "three-tier-terraform-state-<ACCOUNT_ID>"
+region         = "ap-southeast-1"
+dynamodb_table = "three-tier-terraform-lock"
+profile        = "ostad"
+encrypt        = true
