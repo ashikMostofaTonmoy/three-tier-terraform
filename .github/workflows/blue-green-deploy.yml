@@ -1,0 +1,220 @@
+# Blue/green deploy of the backend tier of 16-blue-green-deployment, using
+# only GitHub Actions. Manual trigger only (Actions → Run workflow).
+#
+#   deploy       build (or reuse) a release → install it on the IDLE color
+#                → test the idle color through the real ALB (X-Color header)
+#                → switch 100% of traffic to it in one API call
+#                → roll the frontend
+#   switch-back  rollback: point traffic at the other color again. No build,
+#                no instance changes — the previous release is still running there.
+#   bootstrap    first run on a brand-new stack: same release on both colors
+name: Blue/green deploy (GitHub Actions)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do"
+        type: choice
+        options: [deploy, switch-back, bootstrap]
+        default: deploy
+      release:
+        description: "deploy/bootstrap only: reuse this EXISTING release (short SHA) instead of building the selected commit"
+        required: false
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+# Never two deploys at once — they'd fight over which color is idle.
+concurrency:
+  group: blue-green-deploy
+  cancel-in-progress: false
+
+jobs:
+  blue-green:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AWS_REGION: ${{ vars.BG_AWS_REGION }}
+      BUCKET: ${{ vars.BG_RELEASES_BUCKET }}
+      BLUE_ASG: ${{ vars.BG_BLUE_ASG }}
+      GREEN_ASG: ${{ vars.BG_GREEN_ASG }}
+      BLUE_TG: ${{ vars.BG_BLUE_TG_ARN }}
+      GREEN_TG: ${{ vars.BG_GREEN_TG_ARN }}
+      RULE: ${{ vars.BG_RULE_ARN }}
+      FRONTEND_ASG: ${{ vars.BG_FRONTEND_ASG }}
+      APP_URL: ${{ vars.BG_APP_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.BG_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.BG_AWS_REGION }}
+
+      - name: Helper functions
+        run: |
+          cat > "$RUNNER_TEMP/bg.sh" <<'EOF'
+          # Which color has weight 100 on the weighted rule right now?
+          live_color() {
+            local tg
+            tg=$(aws elbv2 describe-rules --rule-arns "$RULE" \
+              --query 'Rules[0].Actions[0].ForwardConfig.TargetGroups[?Weight==`100`].TargetGroupArn' --output text)
+            if [ "$tg" = "$BLUE_TG" ]; then echo blue; else echo green; fi
+          }
+          other() { [ "$1" = blue ] && echo green || echo blue; }
+          asg_of() { [ "$1" = blue ] && echo "$BLUE_ASG" || echo "$GREEN_ASG"; }
+          tg_of()  { [ "$1" = blue ] && echo "$BLUE_TG"  || echo "$GREEN_TG"; }
+
+          # Safety gate: never switch traffic to a color with no healthy targets.
+          require_healthy() {
+            local n
+            n=$(aws elbv2 describe-target-health --target-group-arn "$(tg_of "$1")" \
+              --query 'length(TargetHealthDescriptions[?TargetHealth.State==`healthy`])' --output text)
+            echo "$1 has $n healthy target(s)"
+            [ "$n" -ge 1 ] || { echo "refusing to switch: $1 has no healthy targets" >&2; exit 1; }
+          }
+
+          # THE cutover: one API call. New requests follow the new weights
+          # within seconds; in-flight requests finish where they started.
+          switch_to() {
+            local wb=0 wg=0
+            [ "$1" = blue ] && wb=100 || wg=100
+            aws elbv2 modify-rule --rule-arn "$RULE" --actions "[{\"Type\":\"forward\",\"ForwardConfig\":{\"TargetGroups\":[{\"TargetGroupArn\":\"$BLUE_TG\",\"Weight\":$wb},{\"TargetGroupArn\":\"$GREEN_TG\",\"Weight\":$wg}],\"TargetGroupStickinessConfig\":{\"Enabled\":false}}}]" >/dev/null
+            echo "switched: blue=$wb green=$wg at $(date -u +%T)"
+          }
+
+          refresh_and_wait() {  # refresh_and_wait ASG MIN_HEALTHY MAX_HEALTHY
+            aws autoscaling start-instance-refresh --auto-scaling-group-name "$1" \
+              --preferences "{\"MinHealthyPercentage\":$2,\"MaxHealthyPercentage\":$3,\"InstanceWarmup\":60}" \
+              --query InstanceRefreshId --output text
+            for i in $(seq 1 100); do
+              s=$(aws autoscaling describe-instance-refreshes --auto-scaling-group-name "$1" --max-records 1 \
+                --query 'InstanceRefreshes[0].Status' --output text)
+              echo "$(date -u +%T) $1: $s"
+              case "$s" in Successful) return 0 ;; Failed|Cancelled|RollbackSuccessful) return 1 ;; esac
+              sleep 15
+            done
+            return 1
+          }
+          EOF
+
+      - name: Decide release and colors
+        id: v
+        run: |
+          source "$RUNNER_TEMP/bg.sh"
+          if [ -n "${{ inputs.release }}" ]; then V="${{ inputs.release }}"; BUILD=false
+          else V="${GITHUB_SHA::7}"; BUILD=true; fi
+          LIVE=$(live_color); IDLE=$(other "$LIVE")
+          echo "version=$V"  >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "live=$LIVE"   >> "$GITHUB_OUTPUT"
+          echo "idle=$IDLE"   >> "$GITHUB_OUTPUT"
+          echo "action=${{ inputs.action }} release=$V live=$LIVE idle=$IDLE"
+
+      # ------------------------------------------------------------ build
+      - uses: actions/setup-node@v4
+        if: inputs.action != 'switch-back' && steps.v.outputs.build == 'true'
+        with:
+          node-version: 20
+
+      - name: Build and publish release
+        if: inputs.action != 'switch-back' && steps.v.outputs.build == 'true'
+        run: |
+          V=${{ steps.v.outputs.version }}
+          bash 14-cicd-codepipeline/deploy/build-bundles.sh "$V"
+          (cd bundle/backend/app && zip -qr ../../backend.zip .)
+          (cd bundle/frontend/site && zip -qr ../../frontend.zip .)
+          aws s3 cp bundle/backend.zip  "s3://$BUCKET/releases/$V/backend.zip"
+          aws s3 cp bundle/frontend.zip "s3://$BUCKET/releases/$V/frontend.zip"
+
+      # -------------------------------------------------------- bootstrap
+      - name: Bootstrap — same release on both colors
+        if: inputs.action == 'bootstrap'
+        run: |
+          source "$RUNNER_TEMP/bg.sh"
+          V=${{ steps.v.outputs.version }}
+          for c in blue green; do aws s3 cp "s3://$BUCKET/releases/$V/backend.zip" "s3://$BUCKET/current-$c/backend.zip"; done
+          aws s3 cp "s3://$BUCKET/releases/$V/frontend.zip" "s3://$BUCKET/current/frontend.zip"
+          # Nothing is serving users yet, so replace everything at once.
+          refresh_and_wait "$BLUE_ASG" 0 100 &
+          refresh_and_wait "$GREEN_ASG" 0 100 &
+          refresh_and_wait "$FRONTEND_ASG" 0 100 &
+          wait -n && wait -n && wait -n
+          switch_to blue
+
+      # ----------------------------------------------------------- deploy
+      - name: Install release on the IDLE color
+        if: inputs.action == 'deploy'
+        run: |
+          source "$RUNNER_TEMP/bg.sh"
+          V=${{ steps.v.outputs.version }}; IDLE=${{ steps.v.outputs.idle }}
+          aws s3 cp "s3://$BUCKET/releases/$V/backend.zip" "s3://$BUCKET/current-$IDLE/backend.zip"
+          # The idle color serves no users, so replace all of it at once
+          # (MinHealthyPercentage 0) — the fast path is safe here.
+          refresh_and_wait "$(asg_of "$IDLE")" 0 100
+
+      - name: Test the idle color through the real load balancer
+        if: inputs.action == 'deploy'
+        run: |
+          V=${{ steps.v.outputs.version }}; IDLE=${{ steps.v.outputs.idle }}
+          for i in $(seq 1 10); do
+            curl -fs -H "X-Color: $IDLE" "$APP_URL/health" | grep -q "\"version\":\"$V\"" \
+              || { echo "$IDLE is not serving $V" >&2; exit 1; }
+          done
+          # A real request through the app to the shared database.
+          curl -fs -H "X-Color: $IDLE" "$APP_URL/api/v1/history" > /dev/null \
+            || { echo "$IDLE cannot reach the database" >&2; exit 1; }
+          echo "$IDLE serves $V and reaches the database — users still on ${{ steps.v.outputs.live }}"
+
+      - name: Switch traffic to the new color
+        if: inputs.action == 'deploy'
+        run: |
+          source "$RUNNER_TEMP/bg.sh"
+          IDLE=${{ steps.v.outputs.idle }}
+          require_healthy "$IDLE"
+          switch_to "$IDLE"
+
+      - name: Verify users get the new release
+        if: inputs.action == 'deploy'
+        run: |
+          V=${{ steps.v.outputs.version }}
+          sleep 5
+          for i in $(seq 1 20); do
+            curl -fs "$APP_URL/health" | grep -q "\"version\":\"$V\"" || { echo "users not on $V" >&2; exit 1; }
+          done
+          echo "Live: ${{ steps.v.outputs.idle }} ($V). Previous release still running on ${{ steps.v.outputs.live }} for instant switch-back."
+
+      - name: Roll the frontend
+        if: inputs.action == 'deploy'
+        run: |
+          source "$RUNNER_TEMP/bg.sh"
+          V=${{ steps.v.outputs.version }}
+          aws s3 cp "s3://$BUCKET/releases/$V/frontend.zip" "s3://$BUCKET/current/frontend.zip"
+          refresh_and_wait "$FRONTEND_ASG" 100 150
+          [ "$(curl -fs "$APP_URL/version.txt")" = "$V" ] || { echo "frontend not on $V" >&2; exit 1; }
+
+      # ------------------------------------------------------ switch-back
+      - name: Switch back (rollback)
+        if: inputs.action == 'switch-back'
+        run: |
+          source "$RUNNER_TEMP/bg.sh"
+          TARGET=${{ steps.v.outputs.idle }}
+          require_healthy "$TARGET"
+          switch_to "$TARGET"
+          sleep 5
+          echo "now serving: $(curl -fs "$APP_URL/health")"
+
+      - name: Summary
+        if: always()
+        run: |
+          source "$RUNNER_TEMP/bg.sh"
+          {
+            echo "### Blue/green: ${{ inputs.action }}"
+            echo "- live before: **${{ steps.v.outputs.live }}**"
+            echo "- live now: **$(live_color)**"
+            echo "- users get: \`$(curl -s "$APP_URL/health")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
