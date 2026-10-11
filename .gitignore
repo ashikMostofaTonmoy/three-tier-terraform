@@ -35,3 +35,6 @@ dist/
 
 # local run logs
 *.log
+
+# build-bundles.sh output
+bundle/

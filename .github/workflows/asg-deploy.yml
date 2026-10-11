@@ -1,0 +1,121 @@
+# Deploy to the Auto Scaling Groups of 15-github-actions-asg using ONLY
+# GitHub Actions — no CodePipeline, CodeBuild or CodeDeploy.
+#
+#   build bundles → upload releases/<sha>/ → point current/ at it
+#   → instance refresh (launch new, wait healthy, then retire old) → smoke test
+#
+# Rollback: run it manually with `release` = an older short SHA. Nothing is
+# rebuilt; current/ is re-pointed and the fleet is refreshed again.
+name: Deploy to ASGs (GitHub Actions only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Roll back to this EXISTING release (short commit SHA). Leave empty to build and deploy the selected commit."
+        required: false
+        default: ""
+  push:
+    branches: [cicd-demo]   # TEMP while testing — see README for the final trigger
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "database/**"
+      - "14-cicd-codepipeline/deploy/**"
+      - ".github/workflows/asg-deploy.yml"
+
+permissions:
+  id-token: write   # lets the job request the OIDC token AWS trusts
+  contents: read
+
+# Two refreshes can't run on the same ASG at once — queue deploys instead.
+concurrency:
+  group: asg-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      BUCKET: ${{ vars.RELEASES_BUCKET }}
+      BACKEND_ASG: ${{ vars.BACKEND_ASG }}
+      FRONTEND_ASG: ${{ vars.FRONTEND_ASG }}
+      APP_URL: ${{ vars.APP_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decide what to deploy
+        id: v
+        run: |
+          if [ -n "${{ inputs.release }}" ]; then
+            echo "version=${{ inputs.release }}" >> "$GITHUB_OUTPUT"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: actions/setup-node@v4
+        if: steps.v.outputs.build == 'true'
+        with:
+          node-version: 20
+
+      - name: Build bundles
+        if: steps.v.outputs.build == 'true'
+        run: bash 14-cicd-codepipeline/deploy/build-bundles.sh "${{ steps.v.outputs.version }}"
+
+      - name: Publish release
+        if: steps.v.outputs.build == 'true'
+        run: |
+          V=${{ steps.v.outputs.version }}
+          (cd bundle/backend/app && zip -qr ../../backend.zip .)
+          (cd bundle/frontend/site && zip -qr ../../frontend.zip .)
+          aws s3 cp bundle/backend.zip  "s3://$BUCKET/releases/$V/backend.zip"
+          aws s3 cp bundle/frontend.zip "s3://$BUCKET/releases/$V/frontend.zip"
+
+      - name: Point current/ at the release
+        run: |
+          V=${{ steps.v.outputs.version }}
+          # Fails loudly if the release doesn't exist (e.g. a typo'd rollback SHA).
+          aws s3 cp "s3://$BUCKET/releases/$V/backend.zip"  "s3://$BUCKET/current/backend.zip"
+          aws s3 cp "s3://$BUCKET/releases/$V/frontend.zip" "s3://$BUCKET/current/frontend.zip"
+
+      - name: Replace instances (launch new before retiring old)
+        run: |
+          # MinHealthyPercentage 100 = never drop below full capacity.
+          # MaxHealthyPercentage 150 = allowed to run 1.5x capacity while
+          # new instances warm up. Together: launch-before-terminate.
+          PREFS='{"MinHealthyPercentage":100,"MaxHealthyPercentage":150,"InstanceWarmup":60}'
+          for ASG in "$BACKEND_ASG" "$FRONTEND_ASG"; do
+            aws autoscaling start-instance-refresh --auto-scaling-group-name "$ASG" \
+              --preferences "$PREFS" --query InstanceRefreshId --output text
+          done
+
+      - name: Wait for both refreshes
+        run: |
+          for i in $(seq 1 120); do
+            B=$(aws autoscaling describe-instance-refreshes --auto-scaling-group-name "$BACKEND_ASG"  --max-records 1 --query 'InstanceRefreshes[0].Status' --output text)
+            F=$(aws autoscaling describe-instance-refreshes --auto-scaling-group-name "$FRONTEND_ASG" --max-records 1 --query 'InstanceRefreshes[0].Status' --output text)
+            echo "$(date -u +%T) backend=$B frontend=$F"
+            case "$B$F" in *Failed*|*Cancelled*|*RollbackSuccessful*) exit 1 ;; esac
+            [ "$B" = Successful ] && [ "$F" = Successful ] && exit 0
+            sleep 15
+          done
+          echo "timed out" >&2; exit 1
+
+      - name: Smoke test through the load balancer
+        run: |
+          V=${{ steps.v.outputs.version }}
+          for i in $(seq 1 10); do
+            curl -fs "$APP_URL/health" | grep -q "\"version\":\"$V\"" || { echo "backend not on $V" >&2; exit 1; }
+            [ "$(curl -fs "$APP_URL/version.txt")" = "$V" ] || { echo "frontend not on $V" >&2; exit 1; }
+          done
+          echo "Deployed $V: $APP_URL"

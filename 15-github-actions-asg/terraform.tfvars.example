@@ -1,0 +1,6 @@
+aws_region      = "ap-southeast-1"
+aws_profile     = "ostad"
+github_repo     = "your-github-user/three-tier-terraform"
+github_branches = ["main"]
+# false if your AWS account already has the GitHub OIDC provider
+create_github_oidc_provider = true
