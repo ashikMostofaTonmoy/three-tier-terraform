@@ -51,6 +51,19 @@ bootstrap**. Lesson 13 runs ~US$0.16/hour (NAT, RDS, ALB, four instances).
 | [04](04-remote-state-s3/) | Remote State Management | S3 backend + DynamoDB locking, bootstrapped once, proven with a real concurrent-apply lock conflict |
 | [05](05-complete-infra-provisioning/) | Complete Infrastructure Provisioning | **Fundamentals capstone** — the full single-VM three-tier app (Secrets Manager, `user_data`, S3-staged build artifacts), recreating `three-tier-deployment` Part 2 |
 
+**Syllabus map — Terraform Fundamentals**
+
+| Topic | Where it's taught |
+|---|---|
+| Introduction to Infrastructure as Code (IaC) | [01](01-terraform-fundamentals/) §1 |
+| Introduction to Terraform and setup | [01](01-terraform-fundamentals/) §2 |
+| Terraform Architecture and Workflow | [01](01-terraform-fundamentals/) §3 |
+| First EC2 Instance with Terraform | [01](01-terraform-fundamentals/) §4 |
+| Write Terraform scripts using GitHub Copilot | [02](02-github-copilot-for-terraform/) |
+| Terraform Modules & Security | [03](03-modules-and-security/) |
+| Remote State Management (S3) | [04](04-remote-state-s3/) |
+| Complete Infrastructure Provisioning with Terraform | [05](05-complete-infra-provisioning/) |
+
 ### Recreate the Production-Ready 3-Tier VPC with Terraform
 
 | # | Lesson | What it covers |
@@ -62,12 +75,40 @@ bootstrap**. Lesson 13 runs ~US$0.16/hour (NAT, RDS, ALB, four instances).
 | [10](10-bastion-host/) | Bastion Host | A real Terraform-generated SSH key pair, `ProxyJump` to private instances, proven alongside (not instead of) SSM |
 | [11](11-complete-production-deployment/) | Complete Production Deployment | **Production VPC capstone** — everything from 06-10 in one `apply`, full state/outputs walkthrough, final teardown including the bootstrap |
 
+**Syllabus map — Production-Ready 3-Tier VPC with Terraform**
+
+| Topic | Where it's taught |
+|---|---|
+| Using Terraform modules for deploying multiple resources | [08](08-three-tier-deployment/) (vpc, rds, secrets, iam, ec2 modules together), [11](11-complete-production-deployment/) §1 |
+| Creating VPC, Subnets, and Networking with Terraform | [06](06-vpc-networking/) |
+| Deploying the Three-Tier Application with Terraform | [08](08-three-tier-deployment/) |
+| Load Balancer and Target Groups with Terraform | [09](09-load-balancer-target-groups/) |
+| Security Groups as Code | [07](07-security-groups-as-code/) |
+| Bastion Host for secure SSH access | [10](10-bastion-host/) |
+| Managing Terraform State and Outputs | [04](04-remote-state-s3/) (remote state), [11](11-complete-production-deployment/) §3 (state list / outputs walkthrough) |
+
 ### Auto Scaling for 3-Tier Applications (High Availability & Self-Healing)
 
 | # | Lesson | What it covers |
 |---|---|---|
 | [12](12-golden-ami/) | Golden AMI from an Existing Instance | Builder EC2 → wait for it to power off → `aws_ami_from_instance`. Runtime-only image (Node, PM2, Nginx, AWS CLI, CodeDeploy agent), and why not to bake app code in |
 | [13](13-auto-scaling-groups/) | Auto Scaling Groups | Launch templates, backend + frontend ASGs across 2 AZs, ALB path routing, ELB health checks, self-healing (instance killed / app killed), target tracking vs. step scaling under real load, instance refresh to roll a new AMI with zero failed requests |
+
+**Syllabus map — Auto Scaling for 3-Tier Applications**
+
+| Topic | Where it's taught |
+|---|---|
+| Why Auto Scaling is Mandatory in Production | [13](13-auto-scaling-groups/) §1 |
+| Auto Scaling Architecture for the Three-Tier App | [13](13-auto-scaling-groups/) §2 |
+| Creating AMI from Existing Application | [12](12-golden-ami/) (all) |
+| Launch Templates Configuration | [13](13-auto-scaling-groups/) §3 |
+| Convert Backend EC2 into Auto Scaling Group | [13](13-auto-scaling-groups/) §3 ("Converting the backend…" table) |
+| Health Checks & Self-Healing Mechanisms | [13](13-auto-scaling-groups/) §5 |
+| Scaling Policies (Target Tracking, Step Scaling) | [13](13-auto-scaling-groups/) §6 |
+| (Optional) Frontend Auto Scaling Group | [13](13-auto-scaling-groups/) §3 + §6.2 — skip by deleting `module "frontend_asg"` and keeping a single frontend as in [11](11-complete-production-deployment/) |
+| Load Balancer Integration with Auto Scaling | [13](13-auto-scaling-groups/) §2 (path routing, `target_group_arns`) |
+| Update Terraform Code for Auto Scaling Groups | [13](13-auto-scaling-groups/) §3 (`modules/asg`) |
+| Managing Auto Scaling with Infrastructure as Code | [13](13-auto-scaling-groups/) §6.3 (`ignore_changes`) + §7 (instance refresh) |
 
 ## Repo layout
 

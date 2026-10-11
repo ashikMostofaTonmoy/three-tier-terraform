@@ -1,0 +1,56 @@
+# CodeBuild: turn one Git commit into two deployable bundles. Each bundle is
+# a self-contained CodeDeploy revision — app files + appspec.yml + hook
+# scripts at its root — so a deploy never needs the npm registry or a
+# compiler on the instance.
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+
+  build:
+    commands:
+      - VERSION=$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c1-7)
+      - echo "Building version $VERSION"
+
+      # Frontend: Vite build, version shown in the page footer and in version.txt
+      - cd frontend
+      - npm ci
+      - BUILD_ID="$VERSION" npm run build
+      - cd ..
+
+      # Backend: production dependencies installed HERE, on Linux x86_64 —
+      # the same platform as the instances — so deploys skip `npm ci`.
+      - cd backend
+      - npm ci --omit=dev
+      - cd ..
+
+      # Assemble the backend bundle
+      - mkdir -p bundle/backend/app
+      - cp -r backend/src backend/node_modules backend/package.json backend/ecosystem.config.cjs bundle/backend/app/
+      - cp database/migrations/*.sql bundle/backend/app/
+      - cp -r 14-cicd-codepipeline/deploy/backend/appspec.yml 14-cicd-codepipeline/deploy/backend/scripts bundle/backend/
+      - echo "$VERSION" > bundle/backend/app/VERSION
+
+      # Assemble the frontend bundle
+      - mkdir -p bundle/frontend/site
+      - cp -r frontend/dist/. bundle/frontend/site/
+      - echo "$VERSION" > bundle/frontend/site/version.txt
+      - cp -r 14-cicd-codepipeline/deploy/frontend/appspec.yml 14-cicd-codepipeline/deploy/frontend/scripts bundle/frontend/
+
+      - chmod +x bundle/*/scripts/*.sh
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: bundle
+  secondary-artifacts:
+    BackendBundle:
+      base-directory: bundle/backend
+      files:
+        - '**/*'
+    FrontendBundle:
+      base-directory: bundle/frontend
+      files:
+        - '**/*'

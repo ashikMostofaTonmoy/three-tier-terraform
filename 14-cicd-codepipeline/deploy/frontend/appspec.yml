@@ -1,0 +1,16 @@
+# CodeDeploy instructions for ONE frontend instance: drop the new static
+# build into Nginx's root and prove the right version is being served.
+version: 0.0
+os: linux
+
+files:
+  - source: site
+    destination: /opt/app/frontend
+
+file_exists_behavior: OVERWRITE
+
+hooks:
+  ValidateService:
+    - location: scripts/validate_service.sh
+      timeout: 60
+      runas: root
