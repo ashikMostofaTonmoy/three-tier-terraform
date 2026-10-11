@@ -6,9 +6,11 @@ set -euxo pipefail
 exec > /var/log/user-data.log 2>&1
 
 # Brand-new stack: no release published yet. Wait for the first workflow
-# run instead of failing the boot (up to 20 minutes).
+# run instead of failing the boot (up to 20 minutes). head-object needs only
+# s3:GetObject — `aws s3 ls` would need s3:ListBucket, which this role
+# deliberately doesn't have (first version of this lesson hit exactly that).
 for i in $(seq 1 120); do
-  aws s3 ls "s3://${bucket}/current/backend.zip" --region "${aws_region}" && break
+  aws s3api head-object --bucket "${bucket}" --key current/backend.zip --region "${aws_region}" >/dev/null 2>&1 && break
   sleep 10
 done
 

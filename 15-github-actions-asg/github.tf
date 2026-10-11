@@ -18,6 +18,13 @@ data "aws_iam_openid_connect_provider" "github" {
 
 locals {
   oidc_provider_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
+
+  # Two subject formats exist. Classic: repo:OWNER/REPO:ref:refs/heads/BRANCH.
+  # Immutable (newer repos): repo:OWNER@ID/REPO@ID:ref:refs/heads/BRANCH —
+  # the IDs stop a deleted-and-recreated repo with the same name from
+  # inheriting this trust. Accept classic always, immutable when given.
+  sub_prefixes = compact(["repo:${var.github_repo}", var.github_immutable_sub_prefix])
+  allowed_subs = flatten([for p in local.sub_prefixes : [for b in var.github_branches : "${p}:ref:refs/heads/${b}"]])
 }
 
 resource "aws_iam_role" "github_deploy" {
@@ -36,7 +43,7 @@ resource "aws_iam_role" "github_deploy" {
         # The security boundary: a fork, another repo, or a branch not in
         # this list gets "Not authorized to perform sts:AssumeRoleWithWebIdentity".
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = [for b in var.github_branches : "repo:${var.github_repo}:ref:refs/heads/${b}"]
+          "token.actions.githubusercontent.com:sub" = local.allowed_subs
         }
       }
     }]

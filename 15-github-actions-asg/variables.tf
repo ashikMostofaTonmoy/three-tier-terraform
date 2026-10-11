@@ -20,6 +20,17 @@ variable "github_branches" {
   default     = ["main"]
 }
 
+variable "github_immutable_sub_prefix" {
+  description = <<-EOT
+    Newer GitHub repos put owner/repo IDs in the OIDC token's subject:
+    "repo:OWNER@OWNER_ID/REPO@REPO_ID". Get yours with
+      gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix
+    Leave empty if that shows use_immutable_subject = false.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "create_github_oidc_provider" {
   description = "An AWS account can hold only ONE token.actions.githubusercontent.com provider. Set false if your account already has it (e.g. from three-tier-deployment)."
   type        = bool
