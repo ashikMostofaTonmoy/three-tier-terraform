@@ -632,6 +632,6 @@ Last, the lesson 04 bootstrap (empty its versioned bucket first — see
 
 ## Next
 
-CI/CD with AWS CodePipeline — deploying to these Auto Scaling
-Groups with CodeDeploy (already installed in the AMI), blue/green, and
-automatic deployment to instances the ASG launches.
+**[14 — CI/CD with AWS CodePipeline](../14-cicd-codepipeline/)** —
+deploying to these Auto Scaling Groups with CodeDeploy (already installed
+in the AMI), including automatic deployment to instances the ASG launches.

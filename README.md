@@ -1,6 +1,6 @@
 # three-tier-terraform
 
-Infrastructure as Code for the "Master in DevOps" course: Terraform fundamentals, the production 3-tier VPC as code, and Auto Scaling.
+Infrastructure as Code for the "Master in DevOps" course: Terraform fundamentals, the production 3-tier VPC as code, Auto Scaling, and CI/CD to Auto Scaling Groups.
 This repo recreates the exact architecture built by hand with AWS CLI
 shell scripts in [`three-tier-deployment`](https://github.com/ashikMostofaTonmoy/three-tier-deployment),
 this time as Terraform: the same Weather Board three-tier app, the same
@@ -12,15 +12,39 @@ Structured after [`terraform-iac-foundations-to-3tier`](https://github.com/sarow
 **one self-contained folder per lesson**, each with its own README, rather
 than one giant document — Terraform earns the extra structure.
 
+## Start here (new students)
+
+1. **Find today's topic** in [Lessons](#lessons) below. Each topic lists
+   its lesson folders, and its **syllabus map** shows exactly which folder
+   and section covers each item of the class outline.
+2. **Check the prerequisites** below once, and create the shared Terraform
+   state bucket once: [`04-remote-state-s3/bootstrap`](04-remote-state-s3/)
+   (every lesson from `04` on stores its state there).
+3. **Work one lesson folder at a time**, in number order. Each folder is
+   self-contained: `cd` in, read its `README.md`, then
+   `terraform init` → `plan` → `apply`. Every README shows the real output
+   to expect and has an **"If it breaks"** section at the end.
+4. **Some lessons depend on an earlier one still being applied** — the
+   README says so at the top of its "Run it" section. The only ones:
+   `13`, `14` and `15` need lesson `12`'s AMI.
+5. **Clean up at the end of every session** — see
+   [Cleaning up after every class](#cleaning-up-after-every-class). One
+   command does it: `bash scripts/cleanup-everything.sh --yes`.
+
+Every command in every README was run against a real AWS account; where
+something could *not* be verified, the README says so in a
+**Verification status** box at the top.
+
 ## Prerequisites
 
 - Terraform >= 1.5.0
 - AWS CLI, configured with a profile that can create VPCs/EC2/RDS/IAM/S3/
   Secrets Manager/ELB resources in `ap-southeast-1` (every lesson defaults
   to profile `ostad` — override via `terraform.tfvars`)
-- Node.js + npm (lessons 05 and 08-13 build the frontend locally via
-  `local-exec` before uploading it)
+- Node.js + npm (lessons 05 and 08-14 build the frontend locally)
 - An SSH client (lesson 10 uses it for real)
+- For the CI/CD lessons: your own **fork** of this repo on GitHub, and the
+  [GitHub CLI](https://cli.github.com/) (`gh`) logged in
 
 ## Cost and cleanup — read this first
 
@@ -185,6 +209,28 @@ All `0` (assuming nothing else lives in the account) means nothing is billing.
 | Update Terraform Code for Auto Scaling Groups | [13](13-auto-scaling-groups/) §3 (`modules/asg`) |
 | Managing Auto Scaling with Infrastructure as Code | [13](13-auto-scaling-groups/) §6.3 (`ignore_changes`) + §7 (instance refresh) |
 
+### CI/CD with AWS CodePipeline — Deploying to Auto Scaling Groups
+
+| # | Lesson | What it covers |
+|---|---|---|
+| [14](14-cicd-codepipeline/) | CI/CD with AWS CodePipeline | GitHub → CodePipeline → CodeBuild → CodeDeploy into both ASGs, all as Terraform. One-at-a-time in-place deploys with traffic control, automatic deploy to new ASG instances, automatic rollback of a deliberately broken release. *Verification status: CodeDeploy side verified live; CodeBuild stage blocked by an AWS account limit — see its README §3.* |
+| [15](15-github-actions-asg/) | Deploy with GitHub Actions only | No AWS CI/CD services: GitHub Actions + OIDC (no stored keys) → S3 releases → ASG instance refresh, launch-before-terminate. Rollback by re-pointing to an older release |
+
+**Syllabus map — CI/CD with AWS CodePipeline**
+
+| Topic | Where it's taught |
+|---|---|
+| CI/CD Challenges with Auto Scaling Groups | [14](14-cicd-codepipeline/) §1 |
+| CI/CD Architecture for the Three-Tier App | [14](14-cicd-codepipeline/) §2 |
+| Create CI/CD Pipeline for Backend Auto Scaling Group | [14](14-cicd-codepipeline/) §3 (`pipeline.tf`, `deploy/`) + §4 |
+| Blue/Green Deployment Strategy | Concept and why it's needed: [14](14-cicd-codepipeline/) §5.3. *Hands-on lesson not in the repo yet.* |
+| Auto-Deploy to New Instances in Auto Scaling Group | [14](14-cicd-codepipeline/) §5.2 (CodeDeploy lifecycle hook); [15](15-github-actions-asg/) §2 (boot `current/`) |
+| CI/CD for Frontend Auto Scaling Group | [14](14-cicd-codepipeline/) §3 (frontend deployment group) |
+| Zero-Downtime Deployment Techniques | [14](14-cicd-codepipeline/) §6 (traffic control, draining, one-at-a-time); [15](15-github-actions-asg/) §4-5 (launch-before-terminate) |
+| Testing Auto-Scaling Behavior | [14](14-cicd-codepipeline/) §5 (every test is a reproducible exercise, incl. breaking a release on purpose) |
+| Automating CI/CD Pipeline Creation with Terraform | [14](14-cicd-codepipeline/) §3; [15](15-github-actions-asg/) §3 (`github.tf`) |
+| *Extra:* deploy with GitHub CI/CD only | [15](15-github-actions-asg/) |
+
 ## Repo layout
 
 ```sh
@@ -192,7 +238,9 @@ three-tier-terraform/
 ├── frontend/, backend/, database/    # the same Weather Board app as three-tier-deployment
 ├── modules/                          # shared source-of-truth library (vpc, security-group,
 │                                      ec2, rds, secrets, iam, alb, alb-path-routing, asg)
-├── 01-terraform-fundamentals/ .. 13-auto-scaling-groups/
+├── scripts/cleanup-everything.sh     # delete every course resource in the AWS account
+├── .github/workflows/asg-deploy.yml  # lesson 15's GitHub Actions deploy (manual trigger)
+├── 01-terraform-fundamentals/ .. 15-github-actions-asg/
 │   └── modules/                      each lesson's own COPY of whichever modules it needs —
 │                                      cd in, terraform init, and it works with nothing
 │                                      outside that folder

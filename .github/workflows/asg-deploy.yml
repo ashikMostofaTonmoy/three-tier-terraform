@@ -15,14 +15,17 @@ on:
         description: "Roll back to this EXISTING release (short commit SHA). Leave empty to build and deploy the selected commit."
         required: false
         default: ""
-  push:
-    branches: [cicd-demo]   # TEMP while testing — see README for the final trigger
-    paths:
-      - "frontend/**"
-      - "backend/**"
-      - "database/**"
-      - "14-cicd-codepipeline/deploy/**"
-      - ".github/workflows/asg-deploy.yml"
+  # Uncomment to deploy on every push to main that touches the app.
+  # Left off by default: this repo is a course — most pushes are lessons,
+  # and the infrastructure in 15-github-actions-asg usually isn't running.
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "frontend/**"
+  #     - "backend/**"
+  #     - "database/**"
+  #     - "14-cicd-codepipeline/deploy/**"
+  #     - ".github/workflows/asg-deploy.yml"
 
 permissions:
   id-token: write   # lets the job request the OIDC token AWS trusts
