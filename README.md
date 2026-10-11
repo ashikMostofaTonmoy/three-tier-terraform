@@ -26,7 +26,7 @@ than one giant document — Terraform earns the extra structure.
    to expect and has an **"If it breaks"** section at the end.
 4. **Some lessons depend on an earlier one still being applied** — the
    README says so at the top of its "Run it" section. The only ones:
-   `13`, `14` and `15` need lesson `12`'s AMI.
+   `13`-`16` need lesson `12`'s AMI.
 5. **Clean up at the end of every session** — see
    [Cleaning up after every class](#cleaning-up-after-every-class). One
    command does it: `bash scripts/cleanup-everything.sh --yes`.
@@ -215,6 +215,7 @@ All `0` (assuming nothing else lives in the account) means nothing is billing.
 |---|---|---|
 | [14](14-cicd-codepipeline/) | CI/CD with AWS CodePipeline | GitHub → CodePipeline → CodeBuild → CodeDeploy into both ASGs, all as Terraform. One-at-a-time in-place deploys with traffic control, automatic deploy to new ASG instances, automatic rollback of a deliberately broken release. *Verification status: CodeDeploy side verified live; CodeBuild stage blocked by an AWS account limit — see its README §3.* |
 | [15](15-github-actions-asg/) | Deploy with GitHub Actions only | No AWS CI/CD services: GitHub Actions + OIDC (no stored keys) → S3 releases → ASG instance refresh, launch-before-terminate. Rollback by re-pointing to an older release |
+| [16](16-blue-green-deployment/) | Blue/Green Deployment with GitHub Actions | Theory of deployment strategies, then two backend fleets behind weighted ALB rules: deploy to the idle color, test it through a header "test door", switch all users in one call (measured: one clean cutover, no mixed versions), roll back in 34 s. Canary as an exercise |
 
 **Syllabus map — CI/CD with AWS CodePipeline**
 
@@ -223,10 +224,10 @@ All `0` (assuming nothing else lives in the account) means nothing is billing.
 | CI/CD Challenges with Auto Scaling Groups | [14](14-cicd-codepipeline/) §1 |
 | CI/CD Architecture for the Three-Tier App | [14](14-cicd-codepipeline/) §2 |
 | Create CI/CD Pipeline for Backend Auto Scaling Group | [14](14-cicd-codepipeline/) §3 (`pipeline.tf`, `deploy/`) + §4 |
-| Blue/Green Deployment Strategy | Concept and why it's needed: [14](14-cicd-codepipeline/) §5.3. *Hands-on lesson not in the repo yet.* |
+| Blue/Green Deployment Strategy | [16](16-blue-green-deployment/) — theory §1-2 and §6, hands-on §9 (why it's needed: [14](14-cicd-codepipeline/) §5.3) |
 | Auto-Deploy to New Instances in Auto Scaling Group | [14](14-cicd-codepipeline/) §5.2 (CodeDeploy lifecycle hook); [15](15-github-actions-asg/) §2 (boot `current/`) |
 | CI/CD for Frontend Auto Scaling Group | [14](14-cicd-codepipeline/) §3 (frontend deployment group) |
-| Zero-Downtime Deployment Techniques | [14](14-cicd-codepipeline/) §6 (traffic control, draining, one-at-a-time); [15](15-github-actions-asg/) §4-5 (launch-before-terminate) |
+| Zero-Downtime Deployment Techniques | [14](14-cicd-codepipeline/) §6 (traffic control, draining, one-at-a-time); [15](15-github-actions-asg/) §4-5 (launch-before-terminate); [16](16-blue-green-deployment/) §1 (strategies compared) + §9 (cutover measured) |
 | Testing Auto-Scaling Behavior | [14](14-cicd-codepipeline/) §5 (every test is a reproducible exercise, incl. breaking a release on purpose) |
 | Automating CI/CD Pipeline Creation with Terraform | [14](14-cicd-codepipeline/) §3; [15](15-github-actions-asg/) §3 (`github.tf`) |
 | *Extra:* deploy with GitHub CI/CD only | [15](15-github-actions-asg/) |
@@ -239,8 +240,8 @@ three-tier-terraform/
 ├── modules/                          # shared source-of-truth library (vpc, security-group,
 │                                      ec2, rds, secrets, iam, alb, alb-path-routing, asg)
 ├── scripts/cleanup-everything.sh     # delete every course resource in the AWS account
-├── .github/workflows/asg-deploy.yml  # lesson 15's GitHub Actions deploy (manual trigger)
-├── 01-terraform-fundamentals/ .. 15-github-actions-asg/
+├── .github/workflows/                # lesson 15 (asg-deploy.yml) and 16 (blue-green-deploy.yml) — manual trigger
+├── 01-terraform-fundamentals/ .. 16-blue-green-deployment/
 │   └── modules/                      each lesson's own COPY of whichever modules it needs —
 │                                      cd in, terraform init, and it works with nothing
 │                                      outside that folder

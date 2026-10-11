@@ -302,7 +302,8 @@ versions at the same time** — a request could hit `m1` and the next one
 consequence: **v1 and v2 must be compatible with each other** (API shape,
 DB schema, cache formats). When they can't be — say, a migration that
 drops a column v1 still reads — you need blue/green instead (all traffic
-switches at once), which is where the next topic goes.
+switches at once) — built and measured in
+[16 — Blue/Green Deployment](../16-blue-green-deployment/).
 
 ### 5.4 Automatic rollback — break it on purpose
 

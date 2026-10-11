@@ -173,9 +173,11 @@ Variables**. Then: **Actions → "Deploy to ASGs (GitHub Actions only)" →
 Run workflow** (or `gh workflow run asg-deploy.yml`).
 
 > **Brand-new stack:** the ASGs launch before any release exists. Their
-> `user_data` waits up to 20 minutes for `current/` to appear (the long
-> `health_check_grace_period = 1500` keeps the ASG from killing them
-> meanwhile). Run the workflow right after `terraform apply`.
+> `user_data` waits up to 4 minutes for `current/` to appear; if none
+> exists yet, the boot fails and the ASG replaces the instance until one
+> does. Run the workflow right after `terraform apply`. (An earlier
+> version used a 25-minute grace period instead — it froze every instance
+> refresh; see [lesson 16 §9.7](../16-blue-green-deployment/README.md).)
 
 ### Real bug: waiting for the first release
 
@@ -288,6 +290,6 @@ See the root README's **Cleaning up after every class**.
 
 ## Next
 
-Blue/green deployment — two full backend fleets and an instant,
-all-at-once traffic switch — is the remaining part of the CI/CD topic and
-is not in the repo yet.
+**[16 — Blue/Green Deployment with GitHub Actions](../16-blue-green-deployment/)** —
+two full backend fleets and an all-at-once traffic switch, with a
+seconds-long rollback.
