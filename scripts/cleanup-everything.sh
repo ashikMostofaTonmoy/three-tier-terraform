@@ -6,7 +6,7 @@
 #   bash scripts/cleanup-everything.sh                 # dry run: list only
 #   bash scripts/cleanup-everything.sh --yes           # actually delete
 #   bash scripts/cleanup-everything.sh --yes --github-repo owner/repo
-#                                                      # also delete the repo variables lesson 15 sets
+#                                                      # also delete the repo variables lessons 15/16 set
 #   ... --include-github-oidc                          # also delete the account-wide GitHub OIDC provider
 #
 # The normal path is still `terraform destroy` per lesson (newest lesson
@@ -168,7 +168,9 @@ for t in $(a dynamodb list-tables --query "TableNames[?starts_with(@,'$P')]" --o
 
 if [ -n "$GH_REPO" ]; then
   say "GitHub repo variables on $GH_REPO"
-  for v in AWS_REGION AWS_ROLE_ARN RELEASES_BUCKET BACKEND_ASG FRONTEND_ASG APP_URL; do
+  # lesson 15's variables, then lesson 16's (BG_*) — deleting one that
+  # doesn't exist just prints an error and moves on
+  for v in AWS_REGION AWS_ROLE_ARN RELEASES_BUCKET BACKEND_ASG FRONTEND_ASG APP_URL            BG_AWS_REGION BG_AWS_ROLE_ARN BG_RELEASES_BUCKET BG_BLUE_ASG BG_GREEN_ASG            BG_BLUE_TG_ARN BG_GREEN_TG_ARN BG_RULE_ARN BG_FRONTEND_ASG BG_APP_URL; do
     act "variable $v" gh variable delete "$v" --repo "$GH_REPO"
   done
 fi

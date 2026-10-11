@@ -2,7 +2,7 @@
 set -euxo pipefail
 exec > /var/log/user-data.log 2>&1
 
-for i in $(seq 1 120); do
+for i in $(seq 1 24); do
   aws s3api head-object --bucket "${bucket}" --key current/frontend.zip --region "${aws_region}" >/dev/null 2>&1 && break
   sleep 10
 done

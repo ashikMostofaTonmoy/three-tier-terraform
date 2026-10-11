@@ -137,8 +137,14 @@ module "alb" {
   security_group_ids = [aws_security_group.alb.id]
 }
 
-# Grace period 1500s: on a brand-new stack, instances wait (up to 20 min, see
-# user_data) for the workflow's first release. After that, boots take ~30s.
+# health_check_grace_period = 300. It must stay SHORT: during the grace
+# period the ASG ignores load-balancer health, and an instance refresh
+# can't start until every instance has left its grace period. The first
+# version of this lesson used 1500s so instances could wait for the first
+# release — and every deploy within 25 minutes of an instance launching
+# stalled at "insufficient data to evaluate its health". Now: instances
+# wait up to 4 min for a release (user_data); if none exists yet the boot
+# fails, the ASG replaces the instance, and the next one tries again.
 module "backend_asg" {
   source = "./modules/asg"
 
@@ -152,7 +158,7 @@ module "backend_asg" {
   min_size                  = 2
   max_size                  = 4
   desired_capacity          = 2
-  health_check_grace_period = 1500
+  health_check_grace_period = 300
   target_cpu                = 50
   extra_tags                = { Lesson = "15-github-actions-asg", Tier = "backend" }
 
@@ -179,7 +185,7 @@ module "frontend_asg" {
   min_size                  = 2
   max_size                  = 3
   desired_capacity          = 2
-  health_check_grace_period = 1500
+  health_check_grace_period = 300
   step_scaling              = true
   extra_tags                = { Lesson = "15-github-actions-asg", Tier = "frontend" }
 
