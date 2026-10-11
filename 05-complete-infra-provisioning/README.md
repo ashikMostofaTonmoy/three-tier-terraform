@@ -1,4 +1,4 @@
-# 05 — Complete Infrastructure Provisioning (Class 7 capstone)
+# 05 — Complete Infrastructure Provisioning (Terraform fundamentals capstone)
 
 > `terraform apply` alone produces the same working Weather Board app that
 > `three-tier-deployment`'s Part 2 built with a dozen hand-run shell scripts
@@ -218,4 +218,4 @@ zipped build artifacts — nothing left behind to clean up by hand.
 
 ## Next
 
-**[06 — VPC Networking (Class 8 begins)](../06-vpc-networking/)**
+**[06 — VPC Networking](../06-vpc-networking/)**

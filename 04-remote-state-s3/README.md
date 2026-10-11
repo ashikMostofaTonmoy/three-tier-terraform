@@ -247,4 +247,4 @@ enabled, so emptying it before `terraform destroy` would touch it needed
 
 ## Next
 
-**[05 — Complete Infrastructure Provisioning (Class 7 capstone)](../05-complete-infra-provisioning/)**
+**[05 — Complete Infrastructure Provisioning](../05-complete-infra-provisioning/)**

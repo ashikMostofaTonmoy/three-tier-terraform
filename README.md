@@ -1,6 +1,6 @@
 # three-tier-terraform
 
-Infrastructure as Code for the "Master in DevOps" course — Classes 7 and 8.
+Infrastructure as Code for the "Master in DevOps" course: Terraform fundamentals, the production 3-tier VPC as code, and Auto Scaling.
 This repo recreates the exact architecture built by hand with AWS CLI
 shell scripts in [`three-tier-deployment`](https://github.com/ashikMostofaTonmoy/three-tier-deployment),
 this time as Terraform: the same Weather Board three-tier app, the same
@@ -18,7 +18,7 @@ than one giant document — Terraform earns the extra structure.
 - AWS CLI, configured with a profile that can create VPCs/EC2/RDS/IAM/S3/
   Secrets Manager/ELB resources in `ap-southeast-1` (every lesson defaults
   to profile `ostad` — override via `terraform.tfvars`)
-- Node.js + npm (lessons 05/08/09/10/11 build the frontend locally via
+- Node.js + npm (lessons 05 and 08-13 build the frontend locally via
   `local-exec` before uploading it)
 - An SSH client (lesson 10 uses it for real)
 
@@ -35,9 +35,13 @@ DynamoDB table shared by every lesson from `04` onward. Create it once,
 keep it until every other lesson is destroyed, then tear it down last (see
 [lesson 11's README](11-complete-production-deployment/README.md#5-clean-up--including-the-bootstrap-for-the-first-time)).
 
+Lessons `12` and `13` add one more ordering rule: lesson 13 launches every
+instance from the AMI lesson 12 bakes, so destroy **13, then 12, then the
+bootstrap**. Lesson 13 runs ~US$0.16/hour (NAT, RDS, ALB, four instances).
+
 ## Lessons
 
-### Class 7 — Terraform Fundamentals
+### Terraform Fundamentals
 
 | # | Lesson | What it covers |
 |---|---|---|
@@ -45,9 +49,9 @@ keep it until every other lesson is destroyed, then tear it down last (see
 | [02](02-github-copilot-for-terraform/) | Writing Terraform with GitHub Copilot | A real before/after session — what Copilot gets wrong by default (security groups open to the world) and a review checklist |
 | [03](03-modules-and-security/) | Terraform Modules & Security | Local modules, the `sensitive` flag and its real limits, a least-privilege IAM policy for whoever runs `terraform apply` |
 | [04](04-remote-state-s3/) | Remote State Management | S3 backend + DynamoDB locking, bootstrapped once, proven with a real concurrent-apply lock conflict |
-| [05](05-complete-infra-provisioning/) | Complete Infrastructure Provisioning | **Class 7 capstone** — the full single-VM three-tier app (Secrets Manager, `user_data`, S3-staged build artifacts), recreating `three-tier-deployment` Part 2 |
+| [05](05-complete-infra-provisioning/) | Complete Infrastructure Provisioning | **Fundamentals capstone** — the full single-VM three-tier app (Secrets Manager, `user_data`, S3-staged build artifacts), recreating `three-tier-deployment` Part 2 |
 
-### Class 8 — Recreate the Production-Ready 3-Tier VPC with Terraform
+### Recreate the Production-Ready 3-Tier VPC with Terraform
 
 | # | Lesson | What it covers |
 |---|---|---|
@@ -56,16 +60,23 @@ keep it until every other lesson is destroyed, then tear it down last (see
 | [08](08-three-tier-deployment/) | Three-Tier Deployment | Frontend + backend on separate instances, Postgres replaced by RDS, across the custom VPC |
 | [09](09-load-balancer-target-groups/) | Load Balancer and Target Groups | The frontend goes fully private; the ALB becomes the only public entry point |
 | [10](10-bastion-host/) | Bastion Host | A real Terraform-generated SSH key pair, `ProxyJump` to private instances, proven alongside (not instead of) SSM |
-| [11](11-complete-production-deployment/) | Complete Production Deployment | **Class 8 capstone** — everything from 06-10 in one `apply`, full state/outputs walkthrough, final teardown including the bootstrap |
+| [11](11-complete-production-deployment/) | Complete Production Deployment | **Production VPC capstone** — everything from 06-10 in one `apply`, full state/outputs walkthrough, final teardown including the bootstrap |
+
+### Auto Scaling for 3-Tier Applications (High Availability & Self-Healing)
+
+| # | Lesson | What it covers |
+|---|---|---|
+| [12](12-golden-ami/) | Golden AMI from an Existing Instance | Builder EC2 → wait for it to power off → `aws_ami_from_instance`. Runtime-only image (Node, PM2, Nginx, AWS CLI, CodeDeploy agent), and why not to bake app code in |
+| [13](13-auto-scaling-groups/) | Auto Scaling Groups | Launch templates, backend + frontend ASGs across 2 AZs, ALB path routing, ELB health checks, self-healing (instance killed / app killed), target tracking vs. step scaling under real load, instance refresh to roll a new AMI with zero failed requests |
 
 ## Repo layout
 
-```
+```sh
 three-tier-terraform/
-├── frontend/, backend/, database/    the same Weather Board app as three-tier-deployment
-├── modules/                          shared source-of-truth library (vpc, security-group,
-│                                      ec2, rds, secrets, iam, alb)
-├── 01-terraform-fundamentals/ .. 11-complete-production-deployment/
+├── frontend/, backend/, database/    # the same Weather Board app as three-tier-deployment
+├── modules/                          # shared source-of-truth library (vpc, security-group,
+│                                      ec2, rds, secrets, iam, alb, alb-path-routing, asg)
+├── 01-terraform-fundamentals/ .. 13-auto-scaling-groups/
 │   └── modules/                      each lesson's own COPY of whichever modules it needs —
 │                                      cd in, terraform init, and it works with nothing
 │                                      outside that folder
@@ -89,6 +100,8 @@ character AWS's API silently rejects (lesson 05), a password character
 that breaks a connection-string URL parser (lesson 05), a redundant
 `sslmode` query param that fights an explicit SSL option (lesson 08), and
 a `count` argument that can't depend on a value unknown until apply
-(lesson 10) — left in place rather than edited away, because seeing what
+(lesson 10), a PM2 banner baked into an AMI and an AMI replacement that
+would have deregistered the image two ASGs were still launching from
+(lesson 12) — left in place rather than edited away, because seeing what
 actually broke and how it got fixed is worth more than a README that never
 shows a single error.

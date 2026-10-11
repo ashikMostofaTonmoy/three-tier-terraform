@@ -215,4 +215,4 @@ Destroy complete! Resources: 53 destroyed.
 
 ## Next
 
-**[11 — Complete Production Deployment (Class 8 capstone)](../11-complete-production-deployment/)**
+**[11 — Complete Production Deployment](../11-complete-production-deployment/)**

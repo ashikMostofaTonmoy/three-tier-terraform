@@ -1,4 +1,4 @@
-# 11 — Complete Production Deployment (Class 8 capstone)
+# 11 — Complete Production Deployment (production VPC capstone)
 
 > Everything from lessons 06-10, assembled in one `terraform apply`: custom
 > VPC, the full chained security-group set, RDS, Secrets Manager, a bastion
@@ -10,7 +10,7 @@
 ## 1. Why this looks like lesson 10
 
 It *is* lesson 10's exact shape, renamed. That's deliberate, not
-laziness-in-disguise: Class 8's whole arc (06 → 10) built this architecture
+laziness-in-disguise: lessons 06 → 10 built this architecture
 one piece at a time so each piece could be understood — and verified — in
 isolation. The capstone's job isn't to add something new, it's to prove the
 pieces really do compose into one coherent `terraform apply`, and to walk
@@ -183,14 +183,20 @@ the bootstrap — is now gone.
 See lessons 08, 09, and 10's own "If it breaks" sections — this lesson's
 failure modes are the union of theirs, since it's the same architecture.
 
-## This is the end of Class 8
+## Where this leaves the architecture
 
-Both classes are now complete:
+Both topics are now complete:
 
-- **Class 7** (lessons 01-05): Terraform fundamentals, Copilot-assisted
+- **Terraform fundamentals** (`01`-`05`): Terraform fundamentals, Copilot-assisted
   authoring, modules, remote state, and a full single-VM three-tier
   deployment.
-- **Class 8** (lessons 06-11): the same production-ready, fully-private,
+- **Production 3-tier VPC as code** (`06`-`11`): the same production-ready, fully-private,
   load-balanced architecture `three-tier-deployment`'s Part 5/6 built by
   hand with AWS CLI scripts — recreated as composable Terraform modules,
   live-verified at every step, and torn down to zero.
+
+**Next — Auto Scaling:** this architecture still has exactly one frontend and
+one backend instance. [12 — Golden AMI](../12-golden-ami/) and
+[13 — Auto Scaling Groups](../13-auto-scaling-groups/) turn each tier into
+a self-healing, auto-scaling fleet. (Lesson 13 recreates the bootstrap
+first if you destroyed it here — see the root README's cleanup order.)

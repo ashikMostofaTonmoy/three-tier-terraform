@@ -1,4 +1,4 @@
-# 06 — VPC Networking (Class 8 begins)
+# 06 — VPC Networking
 
 > Recreating the exact custom VPC `three-tier-deployment`'s Part 5/6 built
 > by hand with AWS CLI shell scripts — 6 subnets across 2 AZs, one Internet
