@@ -32,3 +32,9 @@ dist/
 # editor / OS
 .DS_Store
 .vscode/
+
+# local run logs
+*.log
+
+# build-bundles.sh output
+bundle/

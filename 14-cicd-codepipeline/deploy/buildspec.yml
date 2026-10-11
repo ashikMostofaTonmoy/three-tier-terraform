@@ -1,0 +1,30 @@
+# CodeBuild: turn one Git commit into two deployable bundles. Each bundle is
+# a self-contained CodeDeploy revision — app files + appspec.yml + hook
+# scripts at its root — so a deploy never needs the npm registry or a
+# compiler on the instance. The assembly itself lives in build-bundles.sh,
+# shared with the GitHub-Actions-only lesson.
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+
+  build:
+    commands:
+      - VERSION=$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c1-7)
+      - bash 14-cicd-codepipeline/deploy/build-bundles.sh "$VERSION"
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: bundle
+  secondary-artifacts:
+    BackendBundle:
+      base-directory: bundle/backend
+      files:
+        - '**/*'
+    FrontendBundle:
+      base-directory: bundle/frontend
+      files:
+        - '**/*'

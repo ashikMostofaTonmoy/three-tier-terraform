@@ -1,0 +1,7 @@
+# Copy to backend.hcl (gitignored — the bucket name embeds your AWS account
+# ID) and fill in the values from `terraform output` in bootstrap/.
+bucket         = "three-tier-terraform-state-<ACCOUNT_ID>"
+region         = "ap-southeast-1"
+dynamodb_table = "three-tier-terraform-lock"
+profile        = "ostad"
+encrypt        = true
