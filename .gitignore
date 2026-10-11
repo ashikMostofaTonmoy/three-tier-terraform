@@ -32,3 +32,6 @@ dist/
 # editor / OS
 .DS_Store
 .vscode/
+
+# local run logs
+*.log
