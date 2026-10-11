@@ -87,6 +87,19 @@ jobs:
             echo "switched: blue=$wb green=$wg at $(date -u +%T)"
           }
 
+          # modify-rule returns at once, but the ALB applies new weights a few
+          # seconds later (~11 s measured). Wait until 20 requests IN A ROW
+          # return the expected version, up to 90 s — never a fixed sleep.
+          wait_for_version() {  # wait_for_version VERSION
+            local ok=0
+            for i in $(seq 1 180); do
+              if curl -fs "$APP_URL/health" | grep -q "\"version\":\"$1\""; then ok=$((ok+1)); else ok=0; fi
+              [ "$ok" -ge 20 ] && { echo "users on $1 after $i requests"; return 0; }
+              sleep 0.5
+            done
+            echo "users not on $1 after 90 s" >&2; return 1
+          }
+
           refresh_and_wait() {  # refresh_and_wait ASG MIN_HEALTHY MAX_HEALTHY
             aws autoscaling start-instance-refresh --auto-scaling-group-name "$1" \
               --preferences "{\"MinHealthyPercentage\":$2,\"MaxHealthyPercentage\":$3,\"InstanceWarmup\":60}" \
@@ -181,11 +194,9 @@ jobs:
       - name: Verify users get the new release
         if: inputs.action == 'deploy'
         run: |
+          source "$RUNNER_TEMP/bg.sh"
           V=${{ steps.v.outputs.version }}
-          sleep 5
-          for i in $(seq 1 20); do
-            curl -fs "$APP_URL/health" | grep -q "\"version\":\"$V\"" || { echo "users not on $V" >&2; exit 1; }
-          done
+          wait_for_version "$V"
           echo "Live: ${{ steps.v.outputs.idle }} ($V). Previous release still running on ${{ steps.v.outputs.live }} for instant switch-back."
 
       - name: Roll the frontend
@@ -204,9 +215,12 @@ jobs:
           source "$RUNNER_TEMP/bg.sh"
           TARGET=${{ steps.v.outputs.idle }}
           require_healthy "$TARGET"
+          # The release already running on the target color — read it
+          # through the test door before switching, then wait for users.
+          V=$(curl -fs -H "X-Color: $TARGET" "$APP_URL/health" | jq -r .version)
+          echo "$TARGET is running $V"
           switch_to "$TARGET"
-          sleep 5
-          echo "now serving: $(curl -fs "$APP_URL/health")"
+          wait_for_version "$V"
 
       - name: Summary
         if: always()
