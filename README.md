@@ -39,6 +39,81 @@ Lessons `12` and `13` add one more ordering rule: lesson 13 launches every
 instance from the AMI lesson 12 bakes, so destroy **13, then 12, then the
 bootstrap**. Lesson 13 runs ~US$0.16/hour (NAT, RDS, ALB, four instances).
 
+## Cleaning up after every class
+
+Do this at the end of **every** session — a forgotten NAT Gateway + RDS +
+ALB is ~US$4/day, every day, until someone notices.
+
+### 1. The normal way — `terraform destroy`, newest lesson first
+
+```bash
+cd 15-github-actions-asg          && terraform destroy   # whichever lessons you applied,
+cd ../14-cicd-codepipeline        && terraform destroy   # newest first
+cd ../13-auto-scaling-groups      && terraform destroy
+cd ../12-golden-ami               && terraform destroy   # after 13/14/15 — they launch from its AMI
+cd ../14-cicd-codepipeline/github-connection && terraform destroy   # optional: keeps you from re-approving next time
+cd ../../04-remote-state-s3/bootstrap && terraform destroy  # ALWAYS LAST — see below
+```
+
+Order matters for two reasons:
+
+- **Dependencies across lessons.** Lessons 13-15 launch instances from
+  lesson 12's AMI — destroy them first.
+- **The state bucket goes last, always.** Every lesson from 04 on keeps its
+  Terraform state in `three-tier-terraform-state-<account-id>`. Delete that
+  bucket while resources still exist and Terraform loses track of them:
+  `terraform destroy` can no longer remove what it no longer knows about,
+  and they keep billing. (This happened during the CI/CD lessons — the
+  bucket was emptied and deleted from the console with a full stack still
+  running. Step 2 is how it was cleaned up.)
+
+The bootstrap bucket is versioned, so `terraform destroy` on it fails
+until every object version is gone — see
+[lesson 11 §5](11-complete-production-deployment/README.md#5-clean-up--including-the-bootstrap-for-the-first-time),
+or just use step 2.
+
+### 2. The safety net — one script, no state needed
+
+[`scripts/cleanup-everything.sh`](scripts/cleanup-everything.sh) finds
+every resource this course creates **by name/tag** (`three-tier-terraform*`
+/ `three-tier-tf*`) and deletes it in dependency order — Auto Scaling
+groups first (or they'd relaunch what you terminate), then load balancers,
+RDS, instances, NAT Gateways, then target groups, launch templates,
+security groups (rules revoked first, so chained groups don't block each
+other), VPCs, AMIs + snapshots, secrets, alarms, IAM roles, the GitHub
+connection, S3 buckets (every version emptied), and the lock table.
+
+```bash
+bash scripts/cleanup-everything.sh            # DRY RUN — lists what it would delete, deletes nothing
+bash scripts/cleanup-everything.sh --yes      # delete it all
+# also delete lesson 15's GitHub repo variables and the account-wide GitHub OIDC provider:
+bash scripts/cleanup-everything.sh --yes --github-repo your-user/three-tier-terraform --include-github-oidc
+bash scripts/cleanup-everything.sh            # run the dry run again: it should list nothing
+```
+
+Use it when:
+
+- you're not sure which lessons are still applied,
+- Terraform state is gone or broken (deleted bucket, lost laptop, half-failed destroy),
+- you just want **one command at the end of class**.
+
+`--include-github-oidc` is opt-in because an AWS account can hold only one
+GitHub OIDC provider, and other projects in the same account may rely on it.
+Uses `AWS_PROFILE` (default `ostad`) and `AWS_REGION` (default
+`ap-southeast-1`); run it from Git Bash on Windows or any Linux/macOS shell.
+
+### 3. Verify — trust the account, not the tool
+
+```bash
+aws autoscaling describe-auto-scaling-groups --query 'length(AutoScalingGroups)'
+aws ec2 describe-nat-gateways --filter Name=state,Values=available --query 'length(NatGateways)'
+aws rds describe-db-instances --query 'length(DBInstances)'
+aws elbv2 describe-load-balancers --query 'length(LoadBalancers)'
+aws ec2 describe-instances --filters Name=instance-state-name,Values=running,stopped --query 'length(Reservations)'
+```
+
+All `0` (assuming nothing else lives in the account) means nothing is billing.
+
 ## Lessons
 
 ### Terraform Fundamentals
