@@ -200,9 +200,35 @@ pipeline_name = "three-tier-terraform-14"
 
 ## 5. Testing it — every exercise below was run live
 
-All tests used the same probe: `/health` (backend target group) and
-`/version.txt` (frontend target group) once a second, logging status code
-and version.
+> **Reproduce it — and where to look.** All times in this section are UTC.
+>
+> 1. **The "users":** in one terminal, from the repo root:
+>    ```bash
+>    bash scripts/probe.sh $(cd 14-cicd-codepipeline && terraform output -raw app_url) 600 1 /version.txt | tee probe.log
+>    ```
+>    Once a second it requests `/health` (backend target group — prints the
+>    backend's version) and `/version.txt` (frontend target group), and
+>    ends with a summary of every status code and every version change.
+>    `tee probe.log` keeps a copy; to count versions per minute as in §5.3:
+>    `grep 'version=' probe.log | awk '{print substr($1,1,5), $4}' | sort | uniq -c`
+> 2. **The deploy:** in a second terminal, the command shown in each test
+>    (`manual-deploy.sh`, or a `git push` once CodeBuild works).
+> 3. **Watch it in the console:**
+>    - **CodeDeploy → Applications → `three-tier-terraform-14` →
+>      Deployment groups → `backend`** → **Deployment history**: every
+>      deployment, who created it (*you*, `autoscaling`, or
+>      `codeDeployRollback`), and its status. Click a deployment → the
+>      instance list → an instance → its **lifecycle events**
+>      (`BlockTraffic`, `ApplicationStop`, … `ValidateService`, `AllowTraffic`)
+>      with times and, on failure, the script's error output.
+>    - **EC2 → Target groups → `three-tier-tf-14-be`** → **Targets**: watch
+>      each instance go `draining` → (gone) → `initial` → `healthy` as it's
+>      deployed.
+>    - **EC2 → Auto Scaling groups → `three-tier-terraform-14-backend`** →
+>      **Instance management** (an instance in `Pending:Wait` is held by
+>      CodeDeploy's lifecycle hook) and **Activity**.
+>    - **CodePipeline → Pipelines → `three-tier-terraform-14`**: the
+>      Source → Build → Deploy stages, once CodeBuild works (§3).
 
 ### 5.1 First deploy to an empty fleet
 
@@ -213,7 +239,7 @@ backend: d-U780B5JOL
 frontend: d-XCHVJ7JOL
 
 $ aws deploy get-deployment --deployment-id d-U780B5JOL --query 'deploymentInfo.[status,deploymentOverview]'
-"Succeeded"   {"Succeeded": 2, "Failed": 0, "Skipped": 0}       ← 16:41:13 → 16:44:08
+"Succeeded"   {"Succeeded": 2, "Failed": 0, "Skipped": 0}       ← 10:41:13 → 10:44:08
 ```
 
 ```console
@@ -241,9 +267,9 @@ Simulate a scale-out:
 ```console
 $ aws autoscaling set-desired-capacity --auto-scaling-group-name three-tier-terraform-14-backend --desired-capacity 3
 
-16:45:03 i-0b188f65e4c902791:Pending:Wait  i-0dd0...:InService  i-0f23...:InService
+10:45:03 i-0b188f65e4c902791:Pending:Wait  i-0dd0...:InService  i-0f23...:InService
   ...                                                   ← held by the lifecycle hook
-16:46:41 i-0b188f65e4c902791:InService     i-0dd0...:InService  i-0f23...:InService
+10:46:41 i-0b188f65e4c902791:InService     i-0dd0...:InService  i-0f23...:InService
 ```
 
 ```console
@@ -278,25 +304,28 @@ $ bash 14-cicd-codepipeline/deploy/manual-deploy.sh m2-rolling
 backend: d-RUJ1QPIOL      frontend: d-KKSCFIJOL
 
 # per-instance timing, backend (first lifecycle event → last)
-i-0dd0c26acf47f562e   16:47:46 → 16:49:08
-i-0b188f65e4c902791   16:49:08 → 16:50:29
-i-0f2397e64083b5115   16:50:30 → 16:51:52
+i-0dd0c26acf47f562e   10:47:46 → 10:49:08
+i-0b188f65e4c902791   10:49:08 → 10:50:29
+i-0f2397e64083b5115   10:50:30 → 10:51:52
 ```
 
-Strictly **one instance at a time**, ~80 s each. The probe:
+Strictly **one instance at a time**, ~80 s each. The probe's summary:
 
 ```console
-840 responses, 840 × 200          (420 backend + 420 frontend over 7 minutes)
+=== probe summary: 420 requests to .../health
+    420 × HTTP 200
+=== frontend .../version.txt:
+    420 × HTTP 200
 
-backend version seen, per minute:
-  16:47   m1 ×36
-  16:48   m1 ×37   m2 ×5
-  16:49   m1 ×22   m2 ×20
-  16:50   m1 ×9    m2 ×33
-  16:51   m2 ×42
+backend version seen, per minute (from probe.log, see the box at the top of §5):
+  10:47   m1 ×36
+  10:48   m1 ×37   m2 ×5
+  10:49   m1 ×22   m2 ×20
+  10:50   m1 ×9    m2 ×33
+  10:51   m2 ×42
 ```
 
-Zero failed requests. But look at 16:48–16:50: **users were served both
+Zero failed requests. But look at 10:48–10:50: **users were served both
 versions at the same time** — a request could hit `m1` and the next one
 `m2`. That's inherent to every rolling deploy, and it has a real
 consequence: **v1 and v2 must be compatible with each other** (API shape,
@@ -346,18 +375,22 @@ Read it in order:
 ```console
 $ aws deploy get-deployment --deployment-id d-UCMDHYIOL \
     --query 'deploymentInfo.[status,creator,createTime,completeTime]'
-Succeeded   codeDeployRollback   16:59:52   17:01:17
+Succeeded   codeDeployRollback   10:59:52   11:01:17
 
 $ # on the instance that had failed
 $ curl -s localhost:3000/health
 {"status":"ok","version":"m2-rolling"}
 ```
 
-And what users experienced during all of it:
+And what users experienced during all of it — the probe's summary:
 
 ```console
-960 responses, 960 × 200
-backend versions seen: m2-rolling ×480  (m3-broken: never)
+=== probe summary: 480 requests to .../health
+    480 × HTTP 200
+=== frontend .../version.txt:
+    480 × HTTP 200
+=== changes (first request that saw a new version/color):
+    10:57:27 UTC  version=m2-rolling  color=-     ← the only entry: m3-broken never reached a user
 ```
 
 **Not one user ever saw the broken release.** The only instance that ran

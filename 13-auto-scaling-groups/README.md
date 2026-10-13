@@ -259,19 +259,38 @@ active
 
 ## 5. Health checks and self-healing
 
-Throughout both tests, a probe hit `/health` (backend TG) and `/` (frontend
-TG) once a second and logged every non-200.
+> **Reproduce it — and where to look.** All times in this section are UTC.
+>
+> 1. **The "users":** in one terminal, from the repo root, run
+>    `bash scripts/probe.sh $(cd 13-auto-scaling-groups && terraform output -raw app_url) 300 1 /`
+>    — once a second it requests `/health` (served by the backend target
+>    group) and `/` (frontend target group) and prints the status of each;
+>    the summary at the end counts every failure.
+> 2. **The break:** in a second terminal, run the command shown in each
+>    test below (get instance IDs with the ASG's **Instance management** tab,
+>    see 3).
+> 3. **Watch it in the console:**
+>    - **EC2 → Auto Scaling groups → `three-tier-terraform-13-backend`**
+>      → **Instance management** tab (instances, their health, lifecycle
+>      state) and **Activity** tab (what the ASG did and *why* — the
+>      "Cause" column is where the messages below come from).
+>    - **EC2 → Target groups → `three-tier-tf-13-be`** → **Targets** tab:
+>      each instance's health as the load balancer sees it (`healthy`,
+>      `unhealthy`, `draining`, `initial`). Refresh it every few seconds.
+>    - **EC2 → Instances**, filter by the instance ID: the EC2 **status
+>      checks** column — this is what the default `"EC2"` health check
+>      looks at.
 
 ### 5.1 An instance dies
 
 ```console
-$ aws ec2 terminate-instances --instance-ids i-039157571552f6ec5     # 14:19:43
+$ aws ec2 terminate-instances --instance-ids i-039157571552f6ec5     # 08:19:43
 ```
 
 ```console
-14:20:27  backend TG: i-061a55f7192dc9d13 healthy          ← dead one gone
-14:21:36  backend TG: i-0c257df46cb61b566 initial, i-061a... healthy
-14:22:46  backend TG: i-0c257df46cb61b566 healthy, i-061a... healthy
+08:20:27  backend TG: i-061a55f7192dc9d13 healthy          ← dead one gone
+08:21:36  backend TG: i-0c257df46cb61b566 initial, i-061a... healthy
+08:22:46  backend TG: i-0c257df46cb61b566 healthy, i-061a... healthy
 
 $ aws autoscaling describe-scaling-activities --auto-scaling-group-name three-tier-terraform-13-backend
 08:21:21  Terminating EC2 instance: i-039157571552f6ec5
@@ -284,13 +303,18 @@ $ aws autoscaling describe-scaling-activities --auto-scaling-group-name three-ti
 The ASG noticed ~98 s after the kill, launched a replacement 2 s later,
 and the replacement was serving ~80 s after that. Nobody touched anything.
 
-The probe's verdict:
+The probe's verdict (only the failed lines shown):
 
 ```console
-14:20:18 health=000 front=200
-14:20:22 health=000 front=200
-14:20:29 health=000 front=200
-DONE total=240 non200=3
+08:20:18 UTC  000  version=-  color=-  front=200
+08:20:22 UTC  000  version=-  color=-  front=200
+08:20:29 UTC  000  version=-  color=-  front=200
+
+=== probe summary: 240 requests to .../health
+    237 × HTTP 200
+    3 × no answer (timeout/refused)
+=== frontend .../:
+    240 × HTTP 200
 ```
 
 **Three timeouts** in the ~10 seconds between the instance dying and the
@@ -307,17 +331,17 @@ The harder case — and the one `health_check_type = "ELB"` exists for:
 
 ```console
 $ aws ssm send-command --instance-ids i-061a55f7192dc9d13 \
-    --document-name AWS-RunShellScript --parameters 'commands=["pm2 stop all"]'   # 14:25:44
+    --document-name AWS-RunShellScript --parameters 'commands=["pm2 stop all"]'   # 08:25:44
 ```
 
 ```console
 time      backend TG target i-061a55f7192dc9d13           EC2 status of that instance
-14:26:06  healthy                                          running / ok
-14:26:19  unhealthy  Target.FailedHealthChecks             running / ok
-14:27:22  unhealthy  Target.FailedHealthChecks             running / ok
-14:27:35  draining   Target.DeregistrationInProgress       running / ok
-14:28:00  (gone — replacement i-07cfa39ed7c52161a registering)
-14:29:17  replacement healthy
+08:26:06  healthy                                          running / ok
+08:26:19  unhealthy  Target.FailedHealthChecks             running / ok
+08:27:22  unhealthy  Target.FailedHealthChecks             running / ok
+08:27:35  draining   Target.DeregistrationInProgress       running / ok
+08:28:00  (gone — replacement i-07cfa39ed7c52161a registering)
+08:29:17  replacement healthy
 ```
 
 ```console
@@ -336,10 +360,15 @@ ASG trusts the load balancer's opinion and replaces it.
 The probe:
 
 ```console
-14:25:48 health=502 front=200
+08:25:48 UTC  502  version=-  color=-  front=200
 ...
-14:26:13 health=502 front=200
-DONE total=300 non200=9
+08:26:13 UTC  502  version=-  color=-  front=200
+
+=== probe summary: 300 requests to .../health
+    291 × HTTP 200
+    9 × HTTP 502
+=== frontend .../:
+    300 × HTTP 200
 ```
 
 Nine 502s in the ~25 s before the ALB's health check marked the target
@@ -355,6 +384,25 @@ chance — and launch another one, which it would also kill. 180 s covers
 our ~30 s boot with plenty of margin.
 
 ## 6. Scaling policies
+
+> **Reproduce it — and where to look.** All times UTC. The load here is
+> CPU, not requests: `stress-ng` (pre-installed in the lesson 12 image)
+> burns CPU on the instances, sent through **SSM Run Command** — no SSH.
+> Get the instance IDs from **EC2 → Auto Scaling groups → the group →
+> Instance management**. The exact commands are in each test below.
+>
+> Watch it in the console:
+>
+> - **CloudWatch → Alarms → All alarms**: target tracking creates two
+>   alarms named `TargetTracking-three-tier-terraform-13-backend-AlarmHigh-…`
+>   / `-AlarmLow-…`; step scaling uses this lesson's own
+>   `three-tier-terraform-13-frontend-cpu-high` / `-cpu-low`. Open one to
+>   see its graph cross the threshold and its state go `OK` → `In alarm`.
+> - **EC2 → Auto Scaling groups → the group**: **Details** shows *Desired
+>   capacity* changing; **Activity** shows why (the alarm and policy name);
+>   **Automatic scaling** shows the policies themselves.
+> - **EC2 → Auto Scaling groups → the group → Monitoring** tab → **EC2**:
+>   *CPU utilization (Average)* across the group.
 
 ### 6.1 Target tracking (backend)
 
@@ -385,10 +433,10 @@ Load: `stress-ng` (baked into the AMI) on both backends via SSM:
 
 ```console
 $ aws ssm send-command --instance-ids i-0c257df46cb61b566 i-07cfa39ed7c52161a \
-    --parameters 'commands=["nohup stress-ng --cpu 0 --cpu-load 90 --timeout 900s &"]'    # 14:34:38
+    --parameters 'commands=["nohup stress-ng --cpu 0 --cpu-load 90 --timeout 900s &"]'    # 08:34:38
 
-14:38:33 desired/instances=2 2 alarmHigh=OK
-14:38:56 desired/instances=4 4 alarmHigh=ALARM
+08:38:33 desired/instances=2 2 alarmHigh=OK
+08:38:56 desired/instances=4 4 alarmHigh=ALARM
 
 08:38:39 alarm ...AlarmHigh... in state ALARM triggered policy three-tier-terraform-13-backend-target-cpu
          changing the desired capacity from 2 to 4.
@@ -424,8 +472,8 @@ step_adjustment {                       # above 80% CPU
 (Bounds are relative to the alarm's 60% threshold.) Stress both frontends:
 
 ```console
-14:39:26 stress-ng started on both frontends
-14:42:51 desired=3 cpu-high=ALARM
+08:39:26 stress-ng started on both frontends
+08:42:51 desired=3 cpu-high=ALARM
 
 Threshold Crossed: 2 datapoints [94.79 (08:41:00), 80.86 (08:40:00)]
 were greater than the threshold (60.0).
@@ -462,7 +510,7 @@ a real change.)
 
 ### 6.4 Scaling back in
 
-`pkill stress-ng` at 14:43:24, then:
+`pkill stress-ng` at 08:43:24, then:
 
 ```console
 08:49:18  frontend  Terminating EC2 instance: i-063d47c471b41f51a      (step-in: 5 low datapoints)
@@ -497,11 +545,11 @@ picked up v2 by tag. `terraform apply` finished in seconds (template v2,
 ASG pointed at it); the rollout itself runs inside AWS:
 
 ```console
-15:01:46 backend=InProgress/0/3   frontend=InProgress/0/2
-15:02:52 backend=InProgress/25/2  frontend=InProgress/25/2
-15:03:57 backend=InProgress/75/1  frontend=InProgress/25/1
-15:05:35 backend=Successful/100/0 frontend=InProgress/75/1
-15:06:41 backend=Successful/100/0 frontend=Successful/100/0
+09:01:46 backend=InProgress/0/3   frontend=InProgress/0/2
+09:02:52 backend=InProgress/25/2  frontend=InProgress/25/2
+09:03:57 backend=InProgress/75/1  frontend=InProgress/25/1
+09:05:35 backend=Successful/100/0 frontend=InProgress/75/1
+09:06:41 backend=Successful/100/0 frontend=Successful/100/0
 ```
 
 (Status / % complete / instances left.) Backend took **3m44s**, frontend
@@ -523,15 +571,26 @@ pm2=7.0.4
 ...
 ```
 
-Every instance replaced, every one on v2 — and the
-probe running through the whole rollout:
+Every instance replaced, every one on v2 — and the probe
+(`bash scripts/probe.sh $APP_URL 900 1 /`, started just before the apply)
+running through the whole rollout:
 
 ```console
-15:01:13 health=200 front=200        ← probe start, refresh starts 15:01:43
-...                                  ← every sample 200 through 15:06:46 (refresh end)
-15:18:37 health=000 front=200
-DONE total=900 non200=1
+09:01:13 UTC  200  version=unknown  color=-  front=200     ← probe start; refresh starts 09:01:43
+...                                                ← every request 200 through 09:06:46 (refresh end)
+09:18:37 UTC  000  version=-  color=-  front=200
+
+=== probe summary: 900 requests to .../health
+    899 × HTTP 200
+    1 × no answer (timeout/refused)
+=== frontend .../:
+    900 × HTTP 200
 ```
+
+Watch a refresh in the console: **EC2 → Auto Scaling groups → the group →
+Instance refresh** tab (status, percentage, the preferences used) and the
+**Activity** tab (each terminate/launch, with "in response to an instance
+refresh" as the cause).
 
 **Zero failures during the refresh.** The one timeout came 12 minutes
 *after* both refreshes finished, with no scaling activity in either ASG

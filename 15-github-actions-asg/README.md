@@ -6,7 +6,7 @@
 > release to S3, and replaces every instance with an ASG instance refresh.
 
 > **Verification status.** Build-and-deploy through the workflow was run
-> live: 634/634 requests succeeded during the rollout (§5). The rollback
+> live: all 634 requests (317 to the backend, 317 to the frontend) succeeded during the rollout (§5). The rollback
 > procedure (§6) is the same workflow with one input set; it was not
 > re-run separately on the course account.
 
@@ -201,8 +201,29 @@ policy — least privilege doing its job.
 
 ### A real run
 
-Dispatched with the probe running (`/health` and `/version.txt`, once a
-second):
+> **Reproduce it — and where to look.** All times UTC.
+>
+> 1. **The "users":** in one terminal, from the repo root:
+>    ```bash
+>    bash scripts/probe.sh $(cd 15-github-actions-asg && terraform output -raw app_url) 600 1 /version.txt | tee probe.log
+>    ```
+>    (once a second: `/health` → backend version, `/version.txt` →
+>    frontend; summary at the end). Versions per minute, as below:
+>    `grep 'version=' probe.log | awk '{print substr($1,1,5), $4}' | sort | uniq -c`
+> 2. **The deploy:** GitHub → your repo → **Actions** tab → **Deploy to
+>    ASGs (GitHub Actions only)** → **Run workflow** (leave *release*
+>    empty) — or `gh workflow run asg-deploy.yml`.
+> 3. **Watch it:**
+>    - **GitHub → Actions → the run → job `deploy`**: each step with its
+>      start/end time (the timings below).
+>    - **EC2 → Auto Scaling groups → `three-tier-terraform-15-backend`** →
+>      **Instance refresh** tab (status, % complete) and **Activity** tab
+>      (each launch/terminate, in order — the list below).
+>    - **EC2 → Target groups → `three-tier-tf-15-be`** → **Targets**: the
+>      new instance appears as `initial`, turns `healthy`, and only then
+>      does an old one go `draining`.
+>    - **S3 → `three-tier-terraform-15-releases-…`** → `releases/` (every
+>      build) and `current/` (what instances boot).
 
 ```console
 $ gh workflow run asg-deploy.yml
@@ -237,7 +258,11 @@ workflow steps above):
 11:56   e504193 ×23   2524892 ×19
 11:58   e504193 ×3    2524892 ×39
 11:59                 2524892 ×41
-probe: 634 responses, 634 × 200
+
+=== probe summary: 317 requests to .../health
+    317 × HTTP 200
+=== frontend .../version.txt:
+    317 × HTTP 200
 ```
 
 Zero failures. Note the mixed minutes: like any rolling replacement, old
