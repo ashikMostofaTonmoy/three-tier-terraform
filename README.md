@@ -105,7 +105,7 @@ groups first (or they'd relaunch what you terminate), then load balancers,
 RDS, instances, NAT Gateways, then target groups, launch templates,
 security groups (rules revoked first, so chained groups don't block each
 other), VPCs, AMIs + snapshots, secrets, alarms, IAM roles, the GitHub
-connection, S3 buckets (every version emptied), and the lock table.
+connection, CloudWatch dashboards, S3 buckets (every version emptied), and the lock table.
 
 ```bash
 bash scripts/cleanup-everything.sh            # DRY RUN — lists what it would delete, deletes nothing

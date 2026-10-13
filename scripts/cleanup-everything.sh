@@ -125,6 +125,10 @@ for k in $(a ec2 describe-key-pairs --query "KeyPairs[?starts_with(KeyName,'$P')
 say "Secrets Manager (no recovery window)"
 for s in $(a secretsmanager list-secrets --query "SecretList[?starts_with(Name,'$P/')].ARN" --output text); do act "secret ${s##*:secret:}" a secretsmanager delete-secret --secret-id "$s" --force-delete-without-recovery; done
 
+say "CloudWatch dashboards"
+DB=$(a cloudwatch list-dashboards --dashboard-name-prefix "$P" --query 'DashboardEntries[].DashboardName' --output text)
+[ -n "$DB" ] && act "dashboards $DB" a cloudwatch delete-dashboards --dashboard-names $DB
+
 say "CloudWatch alarms + CodeBuild log groups"
 AL=$(a cloudwatch describe-alarms --query "MetricAlarms[?starts_with(AlarmName,'$P') || starts_with(AlarmName,'TargetTracking-$P')].AlarmName" --output text)
 [ -n "$AL" ] && act "alarms $AL" a cloudwatch delete-alarms --alarm-names $AL
