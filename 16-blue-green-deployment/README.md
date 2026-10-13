@@ -173,6 +173,62 @@ permission — `elasticloadbalancing:ModifyRule`, **on the weighted rule's
 ARN only**. The workflow can move traffic between blue and green and do
 nothing else to the load balancer.
 
+### Seeing which color is live — three places to look
+
+`curl` proves it, but in class you want to **see** it. Keep these open
+while you run a deploy or a switch-back:
+
+**1. The app itself.** The page footer shows which backend answered, as a
+colored badge — refreshed every 3 seconds, no reload needed:
+
+> build `74423bd` · API **`BLUE`** `74423bd`
+
+The backend reports its own color (`APP_COLOR`, written into `.env` by
+each color's `user_data`) and version:
+
+```console
+$ curl $APP_URL/health
+{"status":"ok","version":"74423bd","color":"blue"}
+```
+
+At the cutover the badge flips from one color to the other, and never
+flickers back. To look at the **idle** color without switching anyone,
+use the test door: `curl -H "X-Color: green" $APP_URL/health`.
+
+**2. The CloudWatch dashboard** (created by [`dashboard.tf`](dashboard.tf);
+the URL is a Terraform output: `terraform output dashboard_url`).
+CloudWatch → Dashboards → `three-tier-terraform-16-blue-green`:
+
+- *Requests per color* — the live color has all the traffic, the idle one
+  has none. **A deploy shows up as the two lines crossing.**
+- *Healthy instances per color* — both colors stay at 2: the idle color is
+  running and ready, it just serves nobody. That's what makes rollback
+  instant.
+- *Backend errors (5xx) per color* — should stay at zero through a switch.
+
+The data behind those lines, from a real deploy (requests per minute, UTC;
+the workflow logged `switched: blue=100 green=0 at 17:53:12`):
+
+```console
+UTC     blue   green
+17:51     0     256      ← green live
+17:52     0     259
+17:53   191     127      ← the switch, mid-minute
+17:54   257       0      ← blue live
+17:55   256       0
+```
+
+CloudWatch metrics arrive in 1-minute buckets and a couple of minutes
+late — the dashboard confirms what happened; the badge shows it live.
+
+**3. The load balancer itself — the source of truth.** EC2 → Load
+Balancers → `three-tier-tf-16-alb` → **Listeners and rules** → HTTP:80 →
+the rule for `/api/*, /health` shows the two target groups and their
+**weights** (e.g. `be-blue 100 %`, `be-green 0 %`). That *is* the switch:
+the workflow changes exactly these two numbers. Then EC2 → **Target
+groups** → `three-tier-tf-16-be-blue` / `-be-green` → **Targets** (both
+healthy) and **Monitoring** (only the live one has requests).
+
 ## 5. Why the frontend isn't blue/green here
 
 The frontend is static files. Old and new builds both call the same
@@ -254,7 +310,8 @@ gh workflow run blue-green-deploy.yml -f action=bootstrap   # once, on a new sta
 Everything below is from live runs on the course account. The probe sent
 `/health` requests back to back (~4 per second) and logged each response
 with a millisecond timestamp — fine enough to see the exact moment of a
-cutover. Probe times are local (UTC+6); GitHub step times are UTC.
+cutover. **All times in this section are UTC** — the workflow log and the
+probe use the same clock, so you can line them up directly.
 
 ### 9.1 Bootstrap
 
@@ -287,9 +344,9 @@ What users saw:
 ```console
 probe: 3126 requests, 3126 × 200
 
-19:29:03.321  3df945d      ← every response from here …
-19:32:01.210  3df945d      ← … to here was the old release
-19:32:01.500  d4db366      ← every response from here on was the new one
+13:29:03.321  3df945d      ← every response from here …
+13:32:01.210  3df945d      ← … to here was the old release
+13:32:01.500  d4db366      ← every response from here on was the new one
 ```
 
 **One switch, no interleaving.** The last old response and the first new
@@ -300,8 +357,9 @@ blue/green.
 
 ### 9.3 The cutover isn't instant — it takes ~11 seconds
 
-In §9.2 the switch API call returned at **13:31:50**, but users actually
-moved at **13:32:01.5** (19:32:01.5 local) — about **11.5 seconds later**.
+In §9.2 the workflow's switch call returned at 13:31:50, and the first
+user request served by the new release came at 13:32:01.5 — users moved
+about **11.5 seconds after the switch call**.
 The ALB applies a rule change to its fleet of nodes asynchronously;
 `modify-rule` returning means "accepted", not "in effect".
 
@@ -345,8 +403,8 @@ Switch back (rollback) step: 13:42:37 → 13:43:11   (34 seconds)
 
 ```console
 probe: 676 requests, 676 × 200
-19:42:50.767  d4db366   ← last response from the new release
-19:42:51.025  3df945d   ← first response from the old one — and every one after
+13:42:50.767  d4db366   ← last response from the new release
+13:42:51.025  3df945d   ← first response from the old one — and every one after
 ```
 
 **34 seconds, nothing built, no instance touched** — the old release had
@@ -389,9 +447,9 @@ conclusion: success   (9 min total; the backend cutover itself ~3 min after the 
 ```console
 probe: 2647 requests, 2646 × 200, 1 × timeout
 
-19:48:16.169  3df945d  200
-19:48:19.304           000   ← sent 19:48:16.2, no answer within 3 s
-19:48:19.607  774bcee  200   ← new release from here on
+13:48:16.169  3df945d  200
+13:48:19.304           000   ← sent 13:48:16.2, no answer within 3 s
+13:48:19.607  774bcee  200   ← new release from here on
 ```
 
 One request — the one in flight at the exact moment the ALB applied the
@@ -428,13 +486,20 @@ that, and `bootstrap` exists to seed both colors once.
 
 ## 10. Exercises
 
-1. **Watch a cutover yourself.** Run this, then `deploy` from GitHub:
+1. **Watch a cutover yourself.** Open the three views from §4 — the app
+   (footer badge), the CloudWatch dashboard, and the listener rule's
+   weights in the EC2 console — and in a terminal run:
 
    ```bash
-   while true; do echo "$(date +%T) $(curl -s $APP_URL/health)"; done
+   while true; do echo "$(date -u +%T) $(curl -s $APP_URL/health)"; done
    ```
 
-   You'll see one line where the version changes — and never change back.
+   Then run `deploy` from GitHub. Watch for: the badge changing color, the
+   terminal showing one line where the version and color change (and
+   never change back), the weights flipping on refresh, and — a couple of
+   minutes later — the dashboard's request lines crossing. Note how long
+   after the workflow's `switched: ... at HH:MM:SS` line the terminal
+   changes (it was 7-12 s in our runs).
 2. **Test before users do.** After the idle color is installed but before
    the switch, `curl -H "X-Color: <idle>" $APP_URL/api/v1/history` — that's
    the new code, on production infrastructure, against the real database.

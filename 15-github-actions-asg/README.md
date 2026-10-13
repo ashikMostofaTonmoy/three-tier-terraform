@@ -228,15 +228,15 @@ own activity log:
 11:58:10  Terminating EC2 instance: i-0c948ce6ef135353b
 ```
 
-And what users saw, backend version per minute (probe clock is local time,
-UTC+6 — GitHub's step times above are UTC):
+And what users saw, backend version per minute (UTC, same clock as the
+workflow steps above):
 
 ```console
-17:53   e504193 ×42
-17:54   e504193 ×34   2524892 ×8      ← new instance joins the target group
-17:56   e504193 ×23   2524892 ×19
-17:58   e504193 ×3    2524892 ×39
-17:59                 2524892 ×41
+11:53   e504193 ×42
+11:54   e504193 ×34   2524892 ×8      ← new instance joins the target group
+11:56   e504193 ×23   2524892 ×19
+11:58   e504193 ×3    2524892 ×39
+11:59                 2524892 ×41
 probe: 634 responses, 634 × 200
 ```
 
