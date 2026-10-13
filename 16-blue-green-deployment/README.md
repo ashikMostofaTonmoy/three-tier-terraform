@@ -176,7 +176,23 @@ nothing else to the load balancer.
 ### Seeing which color is live — three places to look
 
 `curl` proves it, but in class you want to **see** it. Keep these open
-while you run a deploy or a switch-back:
+while you run a deploy or a switch-back.
+
+> **First, create some traffic.** Nothing below moves unless someone is
+> using the site — the load balancer's own health checks don't count as
+> requests. Play "the users" with the repo's probe script, from the repo
+> root, in its own terminal:
+>
+> ```bash
+> bash scripts/probe.sh $(cd 16-blue-green-deployment && terraform output -raw app_url) 900
+> ```
+>
+> It sends `/health` requests back to back (~3-5 per second) for 15
+> minutes and prints, for each one, the UTC time, the HTTP status and which
+> version and color answered — so the terminal itself shows the switch.
+> Each open browser tab adds a little traffic too (the footer badge asks
+> every 3 seconds). [`scripts/probe.sh`](../scripts/probe.sh) has the
+> options at the top.
 
 **1. The app itself.** The page footer shows which backend answered, as a
 colored badge — refreshed every 3 seconds, no reload needed:
@@ -543,15 +559,15 @@ that, and `bootstrap` exists to seed both colors once.
 
 1. **Watch a cutover yourself.** Open the three views from §4 — the app
    (footer badge), the CloudWatch dashboard, and the listener rule's
-   weights in the EC2 console — and in a terminal run:
+   weights in the EC2 console — and in a terminal start the traffic:
 
    ```bash
-   while true; do echo "$(date -u +%T) $(curl -s $APP_URL/health)"; done
+   bash scripts/probe.sh $(cd 16-blue-green-deployment && terraform output -raw app_url) 900
    ```
 
    Then run `deploy` from GitHub. Watch for: the badge changing color, the
-   terminal showing one line where the version and color change (and
-   never change back), the weights flipping on refresh, and — a couple of
+   probe showing one line where the version and color change (and never
+   change back — its summary lists every change), the weights flipping on refresh, and — a couple of
    minutes later — the dashboard's request lines crossing. Note how long
    after the workflow's `switched: ... at HH:MM:SS` line the terminal
    changes (it was 7-12 s in our runs).

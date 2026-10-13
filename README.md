@@ -240,6 +240,8 @@ three-tier-terraform/
 ├── modules/                          # shared source-of-truth library (vpc, security-group,
 │                                      ec2, rds, secrets, iam, alb, alb-path-routing, asg)
 ├── scripts/cleanup-everything.sh     # delete every course resource in the AWS account
+├── scripts/probe.sh                  # "users": request traffic + what answered (lessons 13-16)
+├── scripts/cpu-load.sh               # CPU load on an Auto Scaling group via SSM (lesson 13)
 ├── .github/workflows/                # lesson 15 (asg-deploy.yml) and 16 (blue-green-deploy.yml) — manual trigger
 ├── 01-terraform-fundamentals/ .. 16-blue-green-deployment/
 │   └── modules/                      each lesson's own COPY of whichever modules it needs —

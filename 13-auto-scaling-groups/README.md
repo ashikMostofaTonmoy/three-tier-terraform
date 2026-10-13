@@ -386,10 +386,19 @@ our ~30 s boot with plenty of margin.
 ## 6. Scaling policies
 
 > **Reproduce it — and where to look.** All times UTC. The load here is
-> CPU, not requests: `stress-ng` (pre-installed in the lesson 12 image)
-> burns CPU on the instances, sent through **SSM Run Command** — no SSH.
-> Get the instance IDs from **EC2 → Auto Scaling groups → the group →
-> Instance management**. The exact commands are in each test below.
+> **CPU, not requests** — scaling policies react to CPU. The repo's
+> [`scripts/cpu-load.sh`](../scripts/cpu-load.sh) makes every instance in
+> a group busy and calms it down again, from the repo root:
+>
+> ```bash
+> bash scripts/cpu-load.sh three-tier-terraform-13-backend start     # 90% CPU for up to 15 min
+> bash scripts/cpu-load.sh three-tier-terraform-13-backend stop
+> ```
+>
+> It finds the group's running instances by itself and runs `stress-ng`
+> (pre-installed in the lesson 12 image) on all of them through **SSM Run
+> Command** — no SSH, no instance IDs to copy. Its result for each
+> instance is also in **Systems Manager → Run Command → Command history**.
 >
 > Watch it in the console:
 >
@@ -429,11 +438,17 @@ $ aws cloudwatch describe-alarms --alarm-name-prefix TargetTracking-three-tier-t
 (`AlarmLow` was already in `ALARM` — the fleet was idle — but the ASG was
 at its minimum, so there was nothing to remove.)
 
-Load: `stress-ng` (baked into the AMI) on both backends via SSM:
+Load on both backends, started at 08:34:38 (this run sent the same
+`stress-ng` command by hand over SSM; the script does exactly that):
 
 ```console
-$ aws ssm send-command --instance-ids i-0c257df46cb61b566 i-07cfa39ed7c52161a \
-    --parameters 'commands=["nohup stress-ng --cpu 0 --cpu-load 90 --timeout 900s &"]'    # 08:34:38
+$ bash scripts/cpu-load.sh three-tier-terraform-13-backend start
+three-tier-terraform-13-backend: 2 instance(s): i-0c257df46cb61b566 i-07cfa39ed7c52161a
+  i-0c257df46cb61b566: Success — started
+  i-07cfa39ed7c52161a: Success — started
+
+# then watched: desired capacity in EC2 → Auto Scaling groups →
+# three-tier-terraform-13-backend → Details, and the alarm in CloudWatch → Alarms
 
 08:38:33 desired/instances=2 2 alarmHigh=OK
 08:38:56 desired/instances=4 4 alarmHigh=ALARM
@@ -469,10 +484,11 @@ step_adjustment {                       # above 80% CPU
 }
 ```
 
-(Bounds are relative to the alarm's 60% threshold.) Stress both frontends:
+(Bounds are relative to the alarm's 60% threshold.) Load on both frontends:
 
 ```console
-08:39:26 stress-ng started on both frontends
+$ bash scripts/cpu-load.sh three-tier-terraform-13-frontend start 10 95     # 08:39:26 — 95% CPU, 10 min
+
 08:42:51 desired=3 cpu-high=ALARM
 
 Threshold Crossed: 2 datapoints [94.79 (08:41:00), 80.86 (08:40:00)]
@@ -510,7 +526,14 @@ a real change.)
 
 ### 6.4 Scaling back in
 
-`pkill stress-ng` at 08:43:24, then:
+Load stopped on all instances at 08:43:24:
+
+```bash
+bash scripts/cpu-load.sh three-tier-terraform-13-backend stop
+bash scripts/cpu-load.sh three-tier-terraform-13-frontend stop
+```
+
+Then:
 
 ```console
 08:49:18  frontend  Terminating EC2 instance: i-063d47c471b41f51a      (step-in: 5 low datapoints)
