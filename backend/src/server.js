@@ -19,10 +19,15 @@ const PORT = process.env.PORT || 3000;
 
 app.use(metricsMiddleware);
 
-// APP_VERSION is set by the deploy (the CI/CD lesson writes the Git commit
-// into .env), so curling /health tells you which revision this instance runs.
+// APP_VERSION is set by the deploy (the CI/CD lessons write the Git commit
+// into .env), so /health tells you which revision this instance runs.
+// APP_COLOR exists only in the blue/green lesson; when unset, JSON drops it.
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', version: process.env.APP_VERSION || 'unknown' });
+  res.json({
+    status: 'ok',
+    version: process.env.APP_VERSION || 'unknown',
+    color: process.env.APP_COLOR || undefined,
+  });
 });
 
 // --- /metrics lives on its OWN port, not this one — see the comment in

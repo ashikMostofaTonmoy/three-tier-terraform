@@ -156,3 +156,23 @@ body {
   padding: 0.15rem 0.4rem;
   border-radius: 6px;
 }
+
+/* Blue/green lesson: which backend color served the last /health call. */
+.color-badge {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 700;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.color-blue {
+  background: #1d4ed8;
+}
+
+.color-green {
+  background: #15803d;
+}

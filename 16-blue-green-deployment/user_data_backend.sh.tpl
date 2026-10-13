@@ -40,6 +40,7 @@ DATABASE_URL=postgresql://${db_user}:$DB_PASSWORD_URLENC@${db_host}:5432/${db_na
 PGSSL=true
 PM2_INSTANCES=2
 APP_VERSION=$VERSION
+APP_COLOR=${color}
 ENV
 chmod 600 /opt/app/backend/.env
 
