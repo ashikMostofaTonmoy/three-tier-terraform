@@ -63,9 +63,26 @@ terraform init -backend-config=backend.hcl
 terraform apply
 ```
 
-### Bug #1 (real, hit live): non-ASCII security group description
+A successful run plans 15 resources and ends with the app's address:
 
-First `apply` failed partway through:
+```console
+$ terraform plan
+Plan: 15 to add, 0 to change, 0 to destroy.
+
+$ terraform apply
+...
+Outputs:
+app_url = "http://13.212.246.210"
+instance_id = "i-062c31d084e5b9462"
+```
+
+Two mistakes are easy to make when writing this lesson's kind of code.
+This lesson's code already avoids both — read them so you recognise the
+errors when you hit them in your own projects.
+
+### Common pitfall: non-ASCII characters in AWS descriptions
+
+**You'll see** `apply` fail partway through:
 
 ```console
 Error: creating Security Group (three-tier-terraform-05-web-sg): ...
@@ -74,16 +91,16 @@ SSH — debugging via SSM only) for parameter GroupDescription is invalid.
 Character sets beyond ASCII are not supported.
 ```
 
-The em-dash (`—`) in the description string is not ASCII. AWS's
-`GroupDescription` field silently limits itself to ASCII — an easy trap
-for anyone writing Terraform comments/descriptions with the same "nice"
-typography used in prose (including every README in this repo). Fixed by
-using a plain hyphen (`-`) instead.
+**Why:** the em-dash (`—`) in the description is not ASCII, and AWS's
+`GroupDescription` field accepts ASCII only. Easy to type by accident when
+you copy "nice" typography from prose or a word processor. Terraform
+*comments* can contain anything — only values sent to AWS are checked.
 
-### Bug #2 (real, hit live): `#`/`%` in the password broke the DB connection
+**This lesson's code:** uses a plain hyphen (`-`) in every description.
 
-Once the instance came up, `/health` worked but both API endpoints failed
-identically:
+### Common pitfall: special characters in a password inside a URL
+
+**You'll see** `/health` work while both API endpoints fail identically:
 
 ```console
 $ curl http://<ip>/api/v1/forecast?...
@@ -93,9 +110,8 @@ $ curl http://<ip>/api/v1/history
 ```
 
 Both endpoints touch Postgres; neither touches a URL directly, so the
-common failure pointed at `db.js`. Inspected the backend's own logs via
-SSM (no SSH needed — this is exactly what `enable_ssm` in the IAM module
-is for):
+common failure points at `db.js`. The backend's own logs, read over SSM
+(no SSH needed — this is what `enable_ssm` in the IAM module is for):
 
 ```console
 $ aws ssm send-command --instance-ids i-05f87a58e2f4bbb04 \
@@ -108,19 +124,18 @@ TypeError: Invalid URL
     at new ConnectionParameters (.../pg/lib/connection-parameters.js:60:42)
 ```
 
-`pg` parses `DATABASE_URL` with the WHATWG `URL` parser. Lesson 03's
-`random_password` module uses `override_special = "!#%^*()-_=+"` — and two
-of those characters are special to a URL: `#` starts a fragment (truncating
-everything after it), and a lone `%` not followed by two hex digits is an
-invalid percent-encoding sequence. Either one, if it landed in the
-generated password, breaks the connection string outright. `psql` (used
-directly via `PGPASSWORD` for the migration step) has no such restriction —
-which is exactly why the migration step succeeded while the app's own
-connection failed.
+**Why:** `pg` parses `DATABASE_URL` with the WHATWG `URL` parser. The
+`secrets` module's `random_password` uses `override_special = "!#%^*()-_=+"`,
+and two of those characters are special inside a URL: `#` starts a
+fragment (cutting off everything after it) and a lone `%` is an invalid
+percent-encoding. If either lands in the generated password, the
+connection string breaks. `psql` with `PGPASSWORD` has no such restriction
+— which is why the migration can succeed while the app's own connection
+fails, a confusing combination.
 
-**Fix**, in [`user_data.sh.tpl`](user_data.sh.tpl): percent-encode only the
-copy of the password used inside the connection string, leaving the raw
-password for everything else (Postgres role creation, `PGPASSWORD`):
+**This lesson's code** ([`user_data.sh.tpl`](user_data.sh.tpl)): percent-encodes
+only the copy of the password used inside the connection string, and
+keeps the raw password everywhere else (Postgres role creation, `PGPASSWORD`):
 
 ```bash
 DB_PASSWORD_URLENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$DB_PASSWORD")
@@ -128,21 +143,10 @@ DB_PASSWORD_URLENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quo
 DATABASE_URL=postgresql://${db_user}:$DB_PASSWORD_URLENC@localhost:5432/${db_name}
 ```
 
-After the fix (`user_data_replace_on_change = true` on the `ec2` module
-meant this alone forced a clean instance replacement — no manual
-intervention):
-
-```console
-$ terraform apply -auto-approve
-module.app.aws_instance.this: Creation complete after 13s [id=i-062c31d084e5b9462]
-module.app.aws_instance.this (deposed object ebd79f99): Destroying...
-module.app.aws_instance.this: Destruction complete after 30s
-Apply complete! Resources: 2 added, 1 changed, 2 destroyed.
-
-Outputs:
-app_url = "http://13.212.246.210"
-instance_id = "i-062c31d084e5b9462"
-```
+Related: the `ec2` module sets `user_data_replace_on_change = true`, so
+any change to a boot script replaces the instance on the next `apply` — a
+boot script only runs once, at first boot, so editing it on a running
+instance would otherwise change nothing.
 
 ## 4. Proof it actually works end-to-end
 
@@ -212,7 +216,7 @@ zipped build artifacts — nothing left behind to clean up by hand.
   `/var/log/user-data.log` via SSM if it's still failing after 5 minutes:
   `aws ssm send-command --instance-ids <id> --document-name
   AWS-RunShellScript --parameters commands='["tail -50 /var/log/user-data.log"]'`.
-- `Invalid URL` from the API — see Bug #2 above; if you changed
+- `Invalid URL` from the API — see the password pitfall in §3; if you changed
   `override_special` in `modules/secrets/main.tf`, make sure it still
   excludes `#` and doesn't introduce a lone `%`.
 

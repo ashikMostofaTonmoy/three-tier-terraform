@@ -108,17 +108,19 @@ Initializing provider plugins...
 Terraform has been successfully initialized!
 ```
 
-## 4. A real bug this lesson surfaced: `[]` vs `null` for security groups
+## 4. Common pitfall: `[]` vs `null` for security groups
 
-The `ec2` module (copied from lesson 03) originally wrote:
+Remote state means you `plan` the same resources again and again — and a
+second `plan` exposes mistakes a one-shot `apply` never shows. The classic
+one is passing an **empty list** where you mean "not set":
 
 ```hcl
-vpc_security_group_ids = var.security_group_ids   # default = []
+vpc_security_group_ids = var.security_group_ids   # default = []   ← the mistake
 ```
 
-First `apply` succeeded — AWS auto-attached the VPC's default security
-group since none was specified. But the **second** `plan` against that same
-instance showed:
+**You'll see:** the first `apply` succeeds — AWS attaches the VPC's default
+security group because none was given. The **second** `plan` against the
+same instance then shows:
 
 ```console
 ~ vpc_security_group_ids = [
@@ -127,27 +129,25 @@ instance showed:
 Plan: 0 to add, 1 to change, 0 to destroy.
 ```
 
-and applying it failed outright:
+and applying it fails outright:
 
 ```console
 Error: VPC-based instances require at least one security group to be attached.
 ```
 
-**Why**: an explicit `vpc_security_group_ids = []` tells Terraform "this
-instance should have *zero* security groups" — a real desired state it then
+**Why:** an explicit `vpc_security_group_ids = []` tells Terraform "this
+instance should have *zero* security groups" — a real desired state it
 tries to enforce by stripping the default SG AWS attached, which AWS's API
-flatly rejects. This is exactly the kind of drift that only remote,
-re-`plan`-able state catches — a one-shot local `apply` (like lessons 01-03
-each did) never ran a second `plan` against the same resource to notice it.
+flatly rejects.
 
-**Fix**, in [`modules/ec2/main.tf`](modules/ec2/main.tf):
+**What this lesson's code does** ([`modules/ec2/main.tf`](modules/ec2/main.tf)):
 
 ```hcl
 vpc_security_group_ids = length(var.security_group_ids) > 0 ? var.security_group_ids : null
 ```
 
 `null` means "don't manage this argument at all" — Terraform leaves
-whatever AWS assigned alone. After the fix:
+whatever AWS assigned alone, and the second plan is clean:
 
 ```console
 $ terraform plan

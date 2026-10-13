@@ -475,10 +475,10 @@ users, removing it late only costs a few cents.
 
 ## 7. Managing the fleet as code — instance refresh
 
-Lesson 12's v1 AMI had a bug (PM2's ASCII banner in the release file — see
-[lesson 12 §5](../12-golden-ami/README.md#5-making-a-new-version--and-two-real-bugs-v1-shipped-with)). Fixing
-it means baking **v2** and rolling every instance onto it. With a bare EC2
-that's manual surgery per instance. Here:
+Sooner or later the image itself changes — a newer Node, a security patch.
+[Lesson 12 §5](../12-golden-ami/README.md#5-making-a-new-version) bakes a
+**v2**; now every running instance has to move onto it. With bare EC2
+instances that's manual surgery, one instance at a time. Here:
 
 ```bash
 cd ../12-golden-ami && terraform apply -var ami_version=v2    # new AMI
@@ -523,7 +523,7 @@ pm2=7.0.4
 ...
 ```
 
-Every instance replaced, every one on v2, release file clean — and the
+Every instance replaced, every one on v2 — and the
 probe running through the whole rollout:
 
 ```console

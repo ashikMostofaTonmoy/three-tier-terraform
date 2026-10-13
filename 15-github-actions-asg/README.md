@@ -84,18 +84,18 @@ release for free.
   and watch instance refreshes on exactly these two ASGs. No EC2, no IAM,
   no Terraform state.
 
-### Real bug: GitHub's immutable OIDC subject
+### Common pitfall: GitHub's immutable OIDC subject
 
-The first run failed at login:
+**You'll see** the workflow fail at login:
 
 ```console
 Run aws-actions/configure-aws-credentials@v4
 Error: Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
 ```
 
-The trust policy expected the classic subject
-`repo:ashikMostofaTonmoy/three-tier-terraform:ref:refs/heads/...`. But this
-repo's tokens use GitHub's newer **immutable** format:
+**Why:** most tutorials write the trust policy for the classic token
+subject, `repo:OWNER/REPO:ref:refs/heads/...`. Newer GitHub repos send the
+**immutable** format instead — check yours:
 
 ```console
 $ gh api repos/ashikMostofaTonmoy/three-tier-terraform/actions/oidc/customization/sub
@@ -104,8 +104,11 @@ $ gh api repos/ashikMostofaTonmoy/three-tier-terraform/actions/oidc/customizatio
 ```
 
 The numeric IDs mean a repo deleted and re-created with the same name
-can't inherit the trust. Fix: the trust policy accepts both formats, and
-you pass your repo's prefix in `terraform.tfvars`:
+can't inherit the trust — a security feature, but it silently breaks the
+classic pattern.
+
+**This lesson's code** accepts both formats; you pass your repo's prefix
+in `terraform.tfvars`:
 
 ```hcl
 github_immutable_sub_prefix = "repo:OWNER@OWNER_ID/REPO@REPO_ID"   # from the gh api command above
@@ -175,26 +178,28 @@ Run workflow** (or `gh workflow run asg-deploy.yml`).
 > **Brand-new stack:** the ASGs launch before any release exists. Their
 > `user_data` waits up to 4 minutes for `current/` to appear; if none
 > exists yet, the boot fails and the ASG replaces the instance until one
-> does. Run the workflow right after `terraform apply`. (An earlier
-> version used a 25-minute grace period instead — it froze every instance
-> refresh; see [lesson 16 §9.7](../16-blue-green-deployment/README.md).)
+> does. Run the workflow right after `terraform apply`. (Why not simply a
+> long grace period instead? It blocks every instance refresh — see the
+> pitfall in [lesson 16 §9.7](../16-blue-green-deployment/README.md).)
 
-### Real bug: waiting for the first release
+### Common pitfall: `aws s3 ls` with a least-privilege role
 
-The first version of the boot script waited with `aws s3 ls`. Every
-instance looped on:
+The natural way to wait for a file in S3 is `aws s3 ls`. With this
+lesson's instance role, **you'll see** every instance loop on:
 
 ```console
 An error occurred (AccessDenied) when calling the ListObjectsV2 operation: ...
 is not authorized to perform: s3:ListBucket on resource: "arn:aws:s3:::three-tier-terraform-15-releases-..."
 ```
 
-`aws s3 ls` needs `s3:ListBucket`; the instance role deliberately only has
-`s3:GetObject`. Fix: `aws s3api head-object --bucket ... --key current/backend.zip`,
-which needs only `GetObject`. (Least privilege catching a lazy command —
-the fix was the command, not a wider policy.)
+**Why:** `aws s3 ls` needs `s3:ListBucket`; the instance role deliberately
+only has `s3:GetObject`.
 
-### Real run
+**This lesson's code** uses `aws s3api head-object --bucket ... --key current/backend.zip`,
+which needs only `GetObject`. The right fix is the command, not a wider
+policy — least privilege doing its job.
+
+### A real run
 
 Dispatched with the probe running (`/health` and `/version.txt`, once a
 second):

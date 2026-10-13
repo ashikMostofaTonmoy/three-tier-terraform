@@ -25,10 +25,9 @@ resource "aws_instance" "this" {
   # `null` here means "don't manage this argument — let AWS attach the
   # default security group and leave it alone." An explicit `[]` instead
   # would tell Terraform "this instance should have ZERO security groups,"
-  # which AWS's API rejects on every later plan/apply (a real bug hit while
-  # building this lesson: a second `apply` tried to strip AWS's
-  # auto-assigned default SG and failed with "VPC-based instances require
-  # at least one security group").
+  # which AWS's API rejects on every later plan/apply with "VPC-based
+  # instances require at least one security group". See the lesson 04
+  # README, "Common pitfall: [] vs null".
   vpc_security_group_ids = length(var.security_group_ids) > 0 ? var.security_group_ids : null
 
   # A future apply that changes something forcing recreation (e.g.

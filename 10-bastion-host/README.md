@@ -63,35 +63,38 @@ module "sg" {
 }
 ```
 
-## 4. A real bug this lesson surfaced: `count` on an unknown value
+## 4. Common pitfall: `count` that depends on a not-yet-created resource
 
-First `plan` failed:
+This lesson passes the security-group module a VPC that is created **in
+the same apply**: `vpc_id = module.vpc.vpc_id`. At plan time that ID
+doesn't exist yet — it's "known after apply". That's fine for ordinary
+arguments, but **not** for `count` or `for_each`. If a module did this:
+
+```hcl
+data "aws_vpc" "default" {
+  count   = var.vpc_id == null ? 1 : 0     # ← decided at plan time
+  default = true
+}
+```
+
+**You'll see:**
 
 ```console
 Error: Invalid count argument
-
-  on modules\security-group\main.tf line 9, in data "aws_vpc" "default":
-   9:   count   = var.vpc_id == null ? 1 : 0
 
 The "count" value depends on resource attributes that cannot be determined
 until apply, so Terraform cannot predict how many instances will be created.
 ```
 
-`modules/security-group`'s `vpc_id` variable used to default to `null` and
-fall back to a `count`-guarded default-VPC lookup *inside the module* —
-fine when `vpc_id` is a literal `null` (lesson 07's standalone demo, where
-it's known at plan time), but this lesson passes `module.vpc.vpc_id`, a
-value that doesn't exist until the VPC is actually created. Terraform's
-`count` meta-argument must be resolvable at plan time; it can't wait for an
-apply-time value to find out whether the condition is true.
+**Why:** Terraform must know *how many* of each resource exist before it
+can build the plan; it can't wait for an apply-time value to find out.
 
-**Fix**: `vpc_id` became a required input with no module-side fallback;
-lesson 07 now does its own default-VPC lookup in its own `main.tf` instead
-(see [lesson 07's README](../07-security-groups-as-code/README.md#2-why-this-chain-doesnt-hit-the-destroy-order-bug-from-part-6)
-for the full before/after). Moving a conditional lookup out of a shared
-module and into whichever caller actually needs the fallback is generally
-the safer pattern — it keeps the module's required inputs honest instead
-of hiding a plan-time constraint inside a `count` expression.
+**This repo's module** keeps `vpc_id` a plain required input, and lets
+each caller decide where it comes from — lesson 07 looks up the default
+VPC in its own `main.tf`, this lesson passes `module.vpc.vpc_id` (see
+[lesson 07 §3](../07-security-groups-as-code/README.md#3-why-the-module-needs-vpc_id-passed-in)).
+Rule of thumb: never let `count`/`for_each` depend on something created
+in the same apply.
 
 ## 5. Run it
 
@@ -209,9 +212,8 @@ Destroy complete! Resources: 53 destroyed.
   Windows/NTFS under git-bash) don't map that reliably; run
   `chmod 600 three-tier-terraform-10-bastion.pem` before using it if `ssh`
   complains.
-- `Invalid count argument` on `modules/security-group` — see §4; make sure
-  you're on the fixed module version (`vpc_id` required, no module-side
-  default-VPC fallback).
+- `Invalid count argument` — see §4: something in a `count` or `for_each`
+  depends on a resource created in the same apply.
 
 ## Next
 

@@ -5,15 +5,12 @@
 # the bastion group is the only one with any SSH rule at all, and it's
 # scoped to one IP.
 
-# `vpc_id` is a required input, not a null-defaulted lookup done inside
-# this module. An earlier version used `count = var.vpc_id == null ? 1 : 0`
-# on a `data "aws_vpc" "default"` block to fall back to the default VPC —
-# that works fine when vpc_id is a literal null (lesson 07's standalone
-# demo), but breaks the moment a caller passes a VPC ID that doesn't exist
-# yet at plan time (lesson 10, passing module.vpc.vpc_id): `count` can't
-# depend on a value that's unknown until apply, and Terraform refuses with
-# "Invalid count argument." Moving the default-VPC fallback to the CALLER
-# (see lesson 07's own main.tf) avoids the problem entirely.
+# `vpc_id` is a required input — the module never looks up a default VPC
+# itself. A tempting shortcut is `count = var.vpc_id == null ? 1 : 0` on a
+# `data "aws_vpc" "default"` block, but `count` must be known at plan time:
+# the moment a caller passes a VPC that doesn't exist yet (lesson 10 passes
+# module.vpc.vpc_id), Terraform stops with "Invalid count argument". So the
+# caller decides: lesson 07 looks up the default VPC in its own main.tf.
 locals {
   vpc_id = var.vpc_id
 }

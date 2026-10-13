@@ -69,15 +69,17 @@ module.sg.aws_security_group.bastion: Destroying...
 Destroy complete! Resources: 5 destroyed.
 ```
 
-**Update from lesson 10**: `modules/security-group`'s `vpc_id` variable used
-to default to `null` and fall back to a `count`-guarded `data "aws_vpc"
-"default"` lookup *inside the module* when unset. That works fine here,
-where `vpc_id` is always the literal `null` you see below — but lesson 10
-passes a real custom VPC's ID (`module.vpc.vpc_id`), a value not known
-until apply, and `count` can't depend on that. Terraform refused with
-`Invalid count argument`. The fix: `vpc_id` is now a required input with no
-module-side fallback, and *this* lesson does its own default-VPC lookup in
-[`main.tf`](main.tf) instead:
+No revoke-first workaround needed — the same problem, solved by the tool
+itself once the resource graph is expressed declaratively instead of as an
+imperative script. (If a future lesson ever needs a genuine *circular*
+reference between two groups, the same `DependencyViolation` would still
+occur — Terraform doesn't invent a workaround for an actual cycle, it can
+only order a graph that doesn't have one.)
+
+## 3. Why the module needs `vpc_id` passed in
+
+This lesson runs the chain in the account's **default VPC**, so it looks
+that VPC up in its own [`main.tf`](main.tf) and passes the ID to the module:
 
 ```hcl
 data "aws_vpc" "default" {
@@ -91,19 +93,23 @@ module "sg" {
 }
 ```
 
-Behavior here is identical either way — re-validated after the change
-(`terraform plan` still shows the same 5 resources to add) — the
-difference only matters for a caller passing a not-yet-known VPC ID, which
-lesson 10 is the first lesson to do.
+**Common pitfall:** it's tempting to make `vpc_id` optional and let the
+module fall back to the default VPC itself, with
+`count = var.vpc_id == null ? 1 : 0` on a `data "aws_vpc" "default"` block.
+That works here — but the moment a caller passes a VPC that doesn't exist
+yet (lesson 10 passes `module.vpc.vpc_id`, created in the same `apply`),
+Terraform stops with:
 
-No revoke-first workaround needed — the same problem, solved by the tool
-itself once the resource graph is expressed declaratively instead of as an
-imperative script. (If a future lesson ever needs a genuine *circular*
-reference between two groups, the same `DependencyViolation` would still
-occur — Terraform doesn't invent a workaround for an actual cycle, it can
-only order a graph that doesn't have one.)
+```console
+Error: Invalid count argument
+The "count" value depends on resource attributes that cannot be determined
+until apply, so Terraform cannot predict how many instances will be created.
+```
 
-## 3. Run it
+`count` must be known at **plan** time. Rule of thumb: keep a module's
+inputs required and let each *caller* decide where the value comes from.
+
+## 4. Run it
 
 ```bash
 cd 07-security-groups-as-code

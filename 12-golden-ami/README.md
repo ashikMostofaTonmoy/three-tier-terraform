@@ -131,12 +131,24 @@ What's inside is recorded on the image itself, in
 `/etc/three-tier-ami-release` (Node/PM2/AWS CLI/Nginx/CodeDeploy versions
 and build time) — lesson 13 reads it back from a running instance.
 
-## 5. Making a new version — and two real bugs v1 shipped with
+## 5. Making a new version
 
-### Bug 1: v1's release file
+Images need new versions — a newer Node, a security patch, a fixed build
+step. Change [`build_ami.sh.tpl`](build_ami.sh.tpl), then:
 
-Lesson 13 read `/etc/three-tier-ami-release` off a running instance, and
-the `pm2=` line was a full-screen ASCII-art banner:
+```bash
+terraform apply -var ami_version=v2
+```
+
+The template change replaces the builder, a new AMI named `...-v2` gets
+baked, and lesson 13's `most_recent = true` lookup picks it up on its
+next apply. Two pitfalls are worth knowing first.
+
+### Common pitfall: build steps with side effects
+
+Anything a build script *runs* can leave traces in the image. A classic:
+checking PM2's version with `pm2 --version`. **You'll see** this in the
+release file instead of a version number:
 
 ```console
 version=v1
@@ -151,31 +163,34 @@ __/\\\\\\\\\\\\\____/\\\\____________/\\\\____/\\\\\\\\\_____
 aws=aws-cli/2.37.12
 ```
 
-The *first* `pm2` command of any kind — even `pm2 --version` — starts
-PM2's background daemon and prints its welcome banner. So v1 captured the
-banner into the file *and* baked a started-then-killed PM2 runtime
-directory into the image. Harmless here, but exactly the kind of
-build-time side effect a golden image shouldn't carry. Fix: read the
-version without running PM2 at all:
+**Why:** the *first* `pm2` command of any kind — even `pm2 --version` —
+starts PM2's background daemon and prints its welcome banner. The banner
+lands in the file, and a started-then-killed PM2 runtime directory gets
+baked into the image. Harmless here, but exactly the kind of build-time
+side effect a golden image shouldn't carry.
+
+**This lesson's code** reads the version without running PM2 at all:
 
 ```bash
 pm2=$(node -p "require('/usr/lib/node_modules/pm2/package.json').version")
 ```
 
-### Bug 2: the replacement would have deleted v1 first
+### Common pitfall: replacing an image that's still in use
 
-Before baking v2, a plan showed:
+Without the `lifecycle` block below, a plan for v2 shows:
 
 ```console
 -/+ resource "aws_ami_from_instance" "runtime" {
       ~ name = "three-tier-terraform-app-runtime-v1" -> "three-tier-terraform-app-runtime-v2" # forces replacement
 ```
 
-`-/+` is **destroy, then create**. Terraform would deregister v1 first,
-then spend ~12 minutes building v2 — while lesson 13's two launch
-templates still point at v1. Any self-healing replacement or scale-out in
-that window tries to launch from an image that no longer exists, and
-fails. Fix in [`main.tf`](main.tf):
+`-/+` is **destroy, then create** — Terraform's default for a replaced
+resource. It would deregister v1 first, then spend ~12 minutes building
+v2, while lesson 13's launch templates still point at v1. Any
+self-healing replacement or scale-out in that window tries to launch
+from an image that no longer exists, and fails.
+
+**This lesson's code** ([`main.tf`](main.tf)):
 
 ```hcl
 resource "aws_ami_from_instance" "runtime" {
@@ -187,14 +202,14 @@ resource "aws_ami_from_instance" "runtime" {
 ```
 
 Safe here because the name embeds `ami_version`, so v1 and v2 can exist at
-the same time. Re-planned:
+the same time. The plan now reads:
 
 ```console
 +/- create replacement and then destroy
 +/- resource "aws_ami_from_instance" "runtime" {
 ```
 
-### Baking v2
+### Baking v2, for real
 
 ```console
 $ terraform apply -var ami_version=v2 -auto-approve

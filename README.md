@@ -258,15 +258,10 @@ understand the whole library to run one lesson.
 Same standard as `three-tier-deployment`: every `terraform plan`/`apply`/
 `destroy` output shown is real, captured against AWS profile `ostad` in
 `ap-southeast-1`, cross-checked with raw `aws` CLI calls (not just trusted
-from Terraform's own exit code), and torn down afterward. Several lessons'
-READMEs document real bugs hit and fixed along the way — an empty security
-group ID list Terraform refuses to reconcile (lesson 04), a non-ASCII
-character AWS's API silently rejects (lesson 05), a password character
-that breaks a connection-string URL parser (lesson 05), a redundant
-`sslmode` query param that fights an explicit SSL option (lesson 08), and
-a `count` argument that can't depend on a value unknown until apply
-(lesson 10), a PM2 banner baked into an AMI and an AMI replacement that
-would have deregistered the image two ASGs were still launching from
-(lesson 12) — left in place rather than edited away, because seeing what
-actually broke and how it got fixed is worth more than a README that never
-shows a single error.
+from Terraform's own exit code), and torn down afterward.
+
+**Common pitfall** boxes in the lessons show mistakes that are easy to
+make with this kind of code — each with the exact error you'll see, why it
+happens, and how the lesson's code avoids it. The code you're running
+already avoids every one of them; the error messages are real, captured
+live, so you can recognise them when you meet them in your own projects.

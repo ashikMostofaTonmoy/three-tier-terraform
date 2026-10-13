@@ -27,8 +27,8 @@ resource "aws_instance" "this" {
   user_data_replace_on_change = true
   key_name                    = var.key_name
 
-  # `null` (not `[]`) when unset — see the lesson 04 README for the drift
-  # bug this avoids: an empty list tells Terraform to actively strip
+  # `null` (not `[]`) when unset — see the lesson 04 README, "Common
+  # pitfall: [] vs null": an empty list tells Terraform to actively strip
   # whatever default security group AWS auto-attaches, which AWS's API
   # rejects on every later plan/apply.
   vpc_security_group_ids = length(var.security_group_ids) > 0 ? var.security_group_ids : null

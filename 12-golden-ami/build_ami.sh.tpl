@@ -36,8 +36,8 @@ systemctl disable --now nginx
 # Read PM2's version from its package.json — NOT `pm2 --version`. The
 # first pm2 command of any kind spawns the PM2 daemon (and prints a
 # full-screen ASCII banner), which would end up captured in this file and
-# leave a /root/.pm2 runtime directory baked into the image (v1 shipped
-# with exactly that bug — see the lesson README).
+# leave a /root/.pm2 runtime directory baked into the image (see the
+# lesson README, "Common pitfall: build steps with side effects").
 cat > /etc/three-tier-ami-release <<EOF
 image=three-tier-terraform-app-runtime
 version=${ami_version}

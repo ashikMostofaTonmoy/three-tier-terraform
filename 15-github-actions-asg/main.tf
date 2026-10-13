@@ -139,12 +139,12 @@ module "alb" {
 
 # health_check_grace_period = 300. It must stay SHORT: during the grace
 # period the ASG ignores load-balancer health, and an instance refresh
-# can't start until every instance has left its grace period. The first
-# version of this lesson used 1500s so instances could wait for the first
-# release — and every deploy within 25 minutes of an instance launching
-# stalled at "insufficient data to evaluate its health". Now: instances
-# wait up to 4 min for a release (user_data); if none exists yet the boot
-# fails, the ASG replaces the instance, and the next one tries again.
+# can't start until every instance has left its grace period — a long
+# grace (say 1500s, to let new instances wait for a first release) makes
+# every deploy within 25 minutes of a launch stall at "insufficient data
+# to evaluate its health". Instead, instances wait up to 4 min for a
+# release (user_data); if none exists yet the boot fails, the ASG replaces
+# the instance, and the next one tries again.
 module "backend_asg" {
   source = "./modules/asg"
 

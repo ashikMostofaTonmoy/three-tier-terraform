@@ -37,42 +37,43 @@ all — just Node/PM2, fetches the DB password from Secrets Manager (same
 pattern as lesson 05), and runs the migration against **RDS's endpoint**
 instead of `localhost`.
 
-## 3. Two real bugs found running this live
+## 3. Two things to know about RDS
 
-### Bug: `?sslmode=require` in `DATABASE_URL` broke the connection
+### Common pitfall: `?sslmode=require` in `DATABASE_URL`
 
 RDS enforces SSL. `backend/src/db.js` already handles this — a `PGSSL=true`
 env var switches on `ssl: { rejectUnauthorized: false }` in the `pg` Pool
 config, deliberately *not* validating RDS's certificate chain (fine for a
-lab; production would verify against RDS's real CA bundle instead). The
-first version of this lesson's `user_data_backend.sh.tpl` also appended
-`?sslmode=require` to `DATABASE_URL` "for clarity" — redundant, and it
-broke things:
+lab; production would verify against RDS's real CA bundle instead). It's
+tempting to *also* append `?sslmode=require` to `DATABASE_URL` "to be
+explicit". Don't.
+
+**You'll see:**
 
 ```console
 $ curl http://<frontend-ip>/api/v1/history
 {"error":true,"reason":"self-signed certificate in certificate chain"}
 ```
 
-`/api/v1/forecast` still returned data (its own DB write is
-best-effort/non-fatal — see `server.js`), which is exactly why only
-`/api/v1/history` surfaced the failure directly. `pg`'s connection-string
-parser reads `sslmode=require` from the URL and applies its own **strict**
-SSL mode, which then conflicts with the explicit
-`{ rejectUnauthorized: false }` object passed alongside it — the strict
-mode wins, and Node's TLS layer rejects RDS's certificate chain against the
-default trust store.
+…while `/api/v1/forecast` keeps returning data (its own DB write is
+best-effort and non-fatal — see `server.js`), so the breakage is easy to
+miss.
 
-**Fix**: drop `?sslmode=require` from the URL entirely and let the
-existing `PGSSL=true` flag be the *only* thing controlling SSL — which is
-exactly what `db.js`'s own code comment already says it's designed to do.
+**Why:** `pg`'s connection-string parser reads `sslmode=require` from the
+URL and applies its own **strict** SSL mode, which overrides the explicit
+`{ rejectUnauthorized: false }` passed alongside it — and Node's TLS layer
+then rejects RDS's certificate chain against the default trust store.
+
+**This lesson's code** ([`user_data_backend.sh.tpl`](user_data_backend.sh.tpl))
+puts no `sslmode` in the URL; `PGSSL=true` is the *only* thing controlling
+SSL. The history endpoint works:
 
 ```console
 $ curl http://54.169.225.216/api/v1/history
 {"rows":[{"city":"Dhaka","latitude":"23.81000","longitude":"90.41000","temperature":"31.30","queried_at":"2026-09-14T03:45:12.057Z"}]}
 ```
 
-### Reminder: RDS takes real time
+### RDS takes real time
 
 `aws_db_instance` blocked the apply for **4m45s** before the instances
 even started creating — normal for RDS, not a hang:
@@ -144,7 +145,7 @@ Destroy complete! Resources: 40 destroyed.
 - `Invalid URL` in backend logs — the lesson 05 SSL/password-character bug
   can still happen here (see lesson 05's README §3); check `pm2 logs
   backend` via SSM.
-- `self-signed certificate in certificate chain` — see Bug #1 above; check
+- `self-signed certificate in certificate chain` — see the `sslmode` pitfall in §3; check
   `DATABASE_URL` in `/opt/app/backend/.env` (via SSM) has no `sslmode`
   query parameter.
 - Frontend 502s from `/api/` — the backend's private IP baked into Nginx's

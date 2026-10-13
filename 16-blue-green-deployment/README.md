@@ -298,20 +298,24 @@ one are a single request apart, and the version never flips back. Compare
 and `m2` mixed for three minutes. That difference is the whole point of
 blue/green.
 
-### 9.3 Real bug: the cutover isn't instant — it takes ~11 seconds
+### 9.3 The cutover isn't instant — it takes ~11 seconds
 
-That first deploy **failed** at "Verify users get the new release":
+In §9.2 the switch API call returned at **13:31:50**, but users actually
+moved at **13:32:01.5** (19:32:01.5 local) — about **11.5 seconds later**.
+The ALB applies a rule change to its fleet of nodes asynchronously;
+`modify-rule` returning means "accepted", not "in effect".
+
+**Common pitfall: verifying with a fixed sleep.** A pipeline that sleeps a
+few seconds after the switch and then checks will fail randomly:
 
 ```console
 users not on d4db366
 ##[error]Process completed with exit code 1.
 ```
 
-The switch API call returned at **13:31:50**; users actually moved at
-**13:32:01.5** (19:32:01.5 local) — about **11.5 seconds later**. The ALB
-applies a rule change to its fleet of nodes asynchronously; `modify-rule`
-returning means "accepted", not "in effect". The verify step had slept a
-fixed 5 seconds. Fix — poll, don't sleep:
+…even though users were never affected (the probe in §9.2 saw 3126
+successes) — the check simply ran before the ALB had applied the change.
+**This lesson's workflow** polls instead of sleeping:
 
 ```bash
 wait_for_version() {          # 20 consecutive responses with the new version, up to 90 s
@@ -325,9 +329,8 @@ wait_for_version() {          # 20 consecutive responses with the new version, u
 }
 ```
 
-Note what the bug did *not* do: users were never affected — the probe saw
-3126 successes. The pipeline just declared failure too early. With the fix,
-the second deploy's log reads `users on 774bcee after 33 requests`.
+In the deploy in §9.6 it logs `users on 774bcee after 33 requests` — about
+16 seconds of polling.
 
 ### 9.4 Rollback — switch back
 
@@ -368,9 +371,9 @@ That's `ignore_changes = [action]` doing its job. Remove it and this plan
 would show the rule being changed back to blue = 100 — an `apply` would
 silently roll every user back.
 
-### 9.6 Second deploy — and one honest failure
+### 9.6 Another deploy — and the one request that failed
 
-With the verify fix, blue live again, deploying `774bcee`:
+Blue live again, deploying `774bcee`:
 
 ```console
 action=deploy release=774bcee live=blue idle=green
@@ -398,28 +401,30 @@ real clients **retry idempotent requests** (GET `/health`, GET `/history`)
 rather than treat one timeout as an outage. Reported here instead of
 trimmed — "zero failures" would have been true once and false the next time.
 
-### 9.7 Two more real bugs, already fixed in lessons 15 and 16
+### 9.7 Two more pitfalls
 
-**The grace period that froze every refresh.** The first bootstrap sat at
-`InProgress 0%` for 18 minutes with every target already `healthy`:
+**Common pitfall: a long health-check grace period freezes every refresh.**
+With `health_check_grace_period = 1500` (25 minutes — tempting, so new
+instances can wait patiently for a first release), **you'll see** an
+instance refresh sit at `InProgress 0%` while every target is already
+`healthy`:
 
 ```console
 InProgress   0   Waiting for remaining instances to be available. For example:
                  i-00272ff40bf07ea33 has insufficient data to evaluate its health with Elastic Load Balancing.
 ```
 
-The ASGs had `health_check_grace_period = 1500` (25 minutes — chosen so
-new instances could wait for a first release). During the grace period
-an ASG **ignores** load-balancer health, so an instance refresh can't
-start until every instance is past it. Fix: 300 s, and instances wait at
-most 4 minutes for a release before failing and being replaced. After the
-fix: same refresh, ~5.5 minutes. (Lesson 15 had the same setting; it's
-fixed there too.)
+**Why:** during the grace period an ASG **ignores** load-balancer health,
+so an instance refresh can't start until every instance is past it — up
+to 25 minutes. **This lesson's code** uses 300 s, and instances wait at
+most 4 minutes for a release before failing and being replaced (lesson 15
+does the same). With 300 s, the same refresh took ~5.5 minutes.
 
-**An idle color with no release.** On a brand-new stack neither color has
-a release, so `deploy` would test and switch to an empty fleet — the
-safety gate (`require_healthy`) refuses that, and `bootstrap` exists to
-seed both colors once.
+**Common pitfall: switching to an idle color with no release.**
+
+On a brand-new stack neither color has a release, so a `deploy` would test
+and switch to an empty fleet. The safety gate (`require_healthy`) refuses
+that, and `bootstrap` exists to seed both colors once.
 
 ## 10. Exercises
 
