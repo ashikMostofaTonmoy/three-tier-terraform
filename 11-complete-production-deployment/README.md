@@ -107,6 +107,11 @@ Every module from lessons 03/06/07 shows up with its own address prefix
 compose" looks like in practice: one `state list`, but still legible by
 which lesson's module produced each resource.
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **VPC** → **Your VPCs** → `three-tier-terraform-11`; then **VPC** → **Subnets** and **NAT gateways** (filter by `three-tier-terraform-11`).
+> **RDS** → **Databases** → `three-tier-terraform-11`. **Secrets Manager** → **Secrets** → `three-tier-terraform/11/db-password` (students don't need to click **Retrieve secret value**).
+> **IAM** → **Roles** → `three-tier-terraform-11-ec2` → **Permissions** tab. **S3** → **Buckets** → `three-tier-terraform-11-artifacts-…` → **Objects** tab.
+
 ```console
 $ terraform output
 alb_dns_name = "three-tier-terraform-11-alb-1977792591.ap-southeast-1.elb.amazonaws.com"
@@ -116,6 +121,10 @@ bastion_public_ip = "47.128.14.210"
 frontend_private_ip = "10.0.11.221"
 ssh_key_file = "./three-tier-terraform-11-bastion.pem"
 ```
+
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **EC2** → **Instances**: `three-tier-terraform-11-bastion` (**Details** tab: *Public IPv4 address* is `bastion_public_ip`), `three-tier-terraform-11-frontend` and `three-tier-terraform-11-backend` (private IPs only).
+> **EC2** → **Load Balancers** → `three-tier-terraform-11-alb` → **Details**: *DNS name* matches `alb_dns_name`; **Listeners and rules** tab shows HTTP `:80`.
 
 Six outputs — everything needed to *use* this deployment (the app's public
 URL, the bastion's IP, the local key file) — with the DB password nowhere
@@ -152,6 +161,9 @@ $ aws rds describe-db-instances --profile ostad \
 (empty)
 ```
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **VPC** → **Your VPCs** and **RDS** → **Databases**: no `three-tier-terraform-11` entry remains (an RDS database may show `Deleting` briefly).
+
 This is the **last** lesson, so — and only now — the
 [`04-remote-state-s3/bootstrap/`](../04-remote-state-s3/bootstrap/) S3
 bucket and DynamoDB table finally come down too, per the ordering warning
@@ -165,6 +177,9 @@ aws_s3_bucket.state: Destruction complete after 1s
 
 Destroy complete! Resources: 5 destroyed.
 ```
+
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **DynamoDB** → **Tables**: `three-tier-terraform-lock` is gone. **S3** → **Buckets**: `three-tier-terraform-state-…` is gone.
 
 One wrinkle: the state bucket had versioning enabled, and eight lessons'
 worth of *emptied* (but not deleted) state-file objects were still sitting

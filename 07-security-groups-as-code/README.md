@@ -152,6 +152,10 @@ $ aws ec2 describe-security-groups --profile ostad --group-ids sg-0b42ea4d09d94a
 exactly the chain in §1, confirmed against real AWS state, not just the
 Terraform plan.
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **EC2** → **Security Groups**, type `three-tier-terraform-07` in the filter box: 5 groups (`-alb-sg`, `-bastion-sg`, `-frontend-sg`, `-backend-sg`, `-db-sg`).
+> Select `three-tier-terraform-07-backend-sg` → **Inbound rules** tab: the *Source* column shows security group IDs (`sg-…`), not IP ranges: port `3000` from the frontend group, port `22` from the bastion group. Do the same for `three-tier-terraform-07-db-sg`: port `5432` from the backend group.
+
 ### Clean up
 
 ```console

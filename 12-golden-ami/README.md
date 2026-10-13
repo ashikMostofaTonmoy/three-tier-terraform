@@ -123,6 +123,10 @@ $ aws ec2 describe-instances --instance-ids i-0f9ca0ea595c197d8 --query '...Stat
 stopped
 ```
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **EC2** → **AMIs** (left menu, under *Images*; set the filter to *Owned by me*) → `three-tier-terraform-app-runtime-v1`: *Status* `Available`; **Storage** tab: size `20 GiB`, *Encrypted* `Yes`.
+> **EC2** → **Instances** → `three-tier-terraform-12-ami-builder`: *Instance state* `Stopped`.
+
 The root volume stays encrypted (inherited from the `ec2` module's
 `encrypted = true`), and the builder is stopped — it costs only its EBS
 volume (~US$0.05/day) while it sits there.
@@ -222,6 +226,9 @@ module.builder.aws_instance.this: Destruction complete after 11s    ← old buil
 Apply complete! Resources: 3 added, 0 changed, 3 destroyed.
 ami_name = "three-tier-terraform-app-runtime-v2"
 ```
+
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **EC2** → **AMIs** (filter *Owned by me*): `three-tier-terraform-app-runtime-v2` is listed, and `...-v1` is gone (deregistered).
 
 v1 was deregistered only after v2 existed. Lesson 13's `most_recent =
 true` lookup then picked v2 up on its next apply and rolled every instance

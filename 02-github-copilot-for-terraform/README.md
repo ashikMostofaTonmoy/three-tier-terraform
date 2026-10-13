@@ -196,6 +196,10 @@ $ aws ec2 describe-security-groups --profile ostad \
 
 Exactly what was intended — port 22 is not open to the world.
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **EC2** → **Security Groups** → select `three-tier-terraform-02-web-sg` → **Inbound rules** tab: port `22` source is your IP `/32`, port `80` source is `0.0.0.0/0`.
+> To see the instance: **EC2** → **Instances** → select `three-tier-terraform-02-copilot-ec2` → **Details** tab: *Public IPv4 address* matches `public_ip`.
+
 ### Clean up
 
 ```console

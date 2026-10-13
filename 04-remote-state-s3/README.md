@@ -71,6 +71,10 @@ $ aws s3api get-bucket-encryption --profile ostad --bucket three-tier-terraform-
 AES256
 ```
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **DynamoDB** → **Tables** → click `three-tier-terraform-lock` → **Overview** (or **Additional info**) section: *Status* `Active`, *Capacity mode* `On-demand`.
+> **S3** → **Buckets** → click `three-tier-terraform-state-…` (your account ID is at the end) → **Properties** tab: *Bucket Versioning* `Enabled`, *Default encryption* `SSE-S3` (AES256).
+
 ## 3. Pointing a lesson at the remote backend
 
 [`versions.tf`](versions.tf) declares a **partial** backend block:
@@ -107,6 +111,9 @@ Initializing provider plugins...
 - Installing hashicorp/aws v5.100.0...
 Terraform has been successfully initialized!
 ```
+
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **S3** → **Buckets** → `three-tier-terraform-state-…` → **Objects** tab: after the first `apply`, the folder `04-remote-state-s3/` appears and contains `terraform.tfstate` (the remote state file).
 
 ## 4. Common pitfall: `[]` vs `null` for security groups
 
@@ -204,6 +211,9 @@ $ aws dynamodb scan --profile ostad --table-name three-tier-terraform-lock \
     --query 'Items[].LockID.S' --output text
 three-tier-terraform-state-.../terraform.tfstate-md5
 ```
+
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **DynamoDB** → **Tables** → `three-tier-terraform-lock` → **Explore table items**: the *LockID* column lists the same rows (`…/terraform.tfstate-md5` always, `…/terraform.tfstate` only while a run holds the lock).
 
 The first apply also demonstrated lesson 03's `create_before_destroy`
 lifecycle for real, since `-replace` forces exactly that path:

@@ -125,6 +125,12 @@ backend_private_ip = "10.0.10.227"
 ssh_key_file = "./three-tier-terraform-10-bastion.pem"
 ```
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **EC2** → **Instances** → select `three-tier-terraform-10-bastion` → **Details** tab: *Public IPv4 address* is `bastion_public_ip`; `three-tier-terraform-10-frontend` and `three-tier-terraform-10-backend` have no public IP.
+> **EC2** → **Key Pairs** → `three-tier-terraform-10-bastion` (only the public half lives in AWS; the `.pem` is local).
+> **EC2** → **Security Groups** → `three-tier-terraform-10-bastion-sg` → **Inbound rules** tab: port `22` from your IP `/32` only.
+> **EC2** → **Load Balancers** → `three-tier-terraform-10-alb` → **Details**: *DNS name* matches `alb_dns_name`.
+
 ### Proof: SSH reaches instances that have no public IP at all
 
 Direct SSH to the bastion first:

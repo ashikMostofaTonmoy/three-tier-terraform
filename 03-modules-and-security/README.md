@@ -205,6 +205,9 @@ i-016b6807b3d48442f    running    three-tier-terraform-03-app-a
 
 Both instances exist, both came from the exact same module code.
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **EC2** → **Instances** → look for `three-tier-terraform-03-app-a` and `three-tier-terraform-03-app-b` in the *Name* column: *Instance state* `Running` for both (select one → **Details** tab for the instance ID).
+
 ### Clean up
 
 ```console

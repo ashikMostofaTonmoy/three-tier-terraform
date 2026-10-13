@@ -114,6 +114,11 @@ only the public subnets have `MapPublicIpOnLaunch=true`, the public route
 table points at the Internet Gateway, and the one private route table
 points at the one NAT Gateway.
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **VPC** → **Your VPCs** → `three-tier-terraform-06` (*IPv4 CIDR* `10.0.0.0/16`). Then **VPC** → **Subnets**, type `three-tier-terraform-06` in the filter box: 6 rows, check *Availability Zone* and *IPv4 CIDR* columns.
+> **VPC** → **NAT gateways** → `three-tier-terraform-06-nat`: *Status* `Available`.
+> **VPC** → **Route tables** → `three-tier-terraform-06-public-rt` → **Routes** tab: `0.0.0.0/0` → `igw-…`; `three-tier-terraform-06-private-rt` → **Routes** tab: `0.0.0.0/0` → `nat-…`.
+
 ### Clean up
 
 ```console

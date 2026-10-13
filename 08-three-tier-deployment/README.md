@@ -132,6 +132,11 @@ available       False   True    False
 Not publicly accessible, storage encrypted, single-AZ (the cost trade-off
 this lesson's `rds` module makes on purpose).
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **RDS** → **Databases** → click `three-tier-terraform-08` → *Status* `Available` at the top; **Connectivity & security** tab: *Publicly accessible* `No`, *Endpoint* matches `rds_endpoint`; **Configuration** tab: *Encryption* `Enabled`, *Multi-AZ* `No`.
+> **EC2** → **Instances** → `three-tier-terraform-08-frontend` (**Details** tab: *Public IPv4 address* is `app_url`) and `three-tier-terraform-08-backend` (*Private IPv4 addresses* is `backend_private_ip`, no public IP).
+> **VPC** → **Your VPCs** → `three-tier-terraform-08` shows the custom network these live in.
+
 ### Clean up
 
 ```console

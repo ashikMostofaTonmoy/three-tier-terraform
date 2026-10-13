@@ -183,6 +183,9 @@ $ aws ec2 describe-instances --profile ostad --instance-ids i-0c8b0f74fa92b054b 
 i-0c8b0f74fa92b054b     running    t3.micro
 ```
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **EC2** → **Instances** → select `three-tier-terraform-01-first-ec2` → **Details** tab: *Instance state* `Running`, *Instance type* `t3.micro`.
+
 And ask Terraform itself what it's tracking:
 
 ```console

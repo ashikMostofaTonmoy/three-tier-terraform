@@ -89,6 +89,10 @@ $ aws elbv2 describe-target-health --profile ostad \
 {"State": "healthy"}
 ```
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **EC2** → **Target groups** → select `three-tier-terraform-09-tg` → **Targets** tab: *Health status* `Healthy` for the frontend instance (**Health checks** shows path `/health`).
+> **EC2** → **Load Balancers** → select `three-tier-terraform-09-alb` → **Details**: *DNS name* matches `alb_dns_name`, *Scheme* `Internet-facing`; **Listeners and rules** tab: HTTP `:80` forwards to `three-tier-terraform-09-tg`.
+
 Full end-to-end through the ALB's DNS name — no bugs this run; the
 SSL/URL-encoding fixes from lessons 05 and 08 carried straight through:
 
@@ -109,6 +113,9 @@ $ aws ec2 describe-instances --profile ostad --instance-ids i-0368428e100973cfc 
     --query 'Reservations[0].Instances[0].PublicIpAddress' --output text
 None
 ```
+
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **EC2** → **Instances** → select `three-tier-terraform-09-frontend` → **Details** tab: *Public IPv4 address* is `-` (empty), only a *Private IPv4 address* is shown.
 
 ### Clean up
 

@@ -76,6 +76,10 @@ app_url = "http://13.212.246.210"
 instance_id = "i-062c31d084e5b9462"
 ```
 
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **EC2** → **Instances** → select `three-tier-terraform-05-app` → **Details** tab: *Public IPv4 address* is the `app_url` address; **Security** tab shows IAM role `three-tier-terraform-05-ec2` and group `three-tier-terraform-05-web-sg` (inbound: only port `80`, no port `22`).
+> **S3** → **Buckets** → `three-tier-terraform-05-artifacts-…` → **Objects** tab: `frontend.zip`, `backend.zip`, `migration.sql`.
+
 Two mistakes are easy to make when writing this lesson's kind of code.
 This lesson's code already avoids both — read them so you recognise the
 errors when you hit them in your own projects.
@@ -176,6 +180,9 @@ static-file check.
 $ terraform output
 db_secret_arn = "arn:aws:secretsmanager:...:secret:three-tier-terraform/05/db-password-vlfrCS"
 ```
+
+> **See it in the console** (region: Asia Pacific (Singapore) `ap-southeast-1`, top-right):
+> **Secrets Manager** → **Secrets** → click `three-tier-terraform/05/db-password` → *Secret ARN* matches `db_secret_arn`. A **Retrieve secret value** button exists there, but students don't need to reveal it.
 
 But `random_password`'s result **is** stored in Terraform's state, in
 plaintext, regardless — confirmed directly (without printing the value):
