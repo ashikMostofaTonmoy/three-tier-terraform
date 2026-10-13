@@ -111,7 +111,7 @@ Terraform creates the rule with blue at 100. From then on the **workflow**
 moves the weights — that's the deployment. `ignore_changes = [action]` is
 what makes that safe: without it, the next `terraform apply` would
 "correct" the weights back to blue = 100 and silently undo a deployment
-(§9.5 checks this for real).
+(§9.8 checks this for real).
 
 ## 4. The workflow — `.github/workflows/blue-green-deploy.yml`
 
@@ -152,7 +152,7 @@ sequenceDiagram
    healthy targets.
 6. **Cutover**: one `aws elbv2 modify-rule` call sets idle = 100, live = 0.
 7. **Verify** from the user's side (no header): wait until 20 requests in a
-   row return the new SHA — the ALB takes ~11 s to apply new weights (§9.3).
+   row return the new SHA — the ALB takes 7-12 s to apply new weights (§9.7).
 8. **Roll the frontend** (rolling, launch-before-terminate — §5).
 
 ### `switch-back` — rollback
@@ -286,82 +286,165 @@ users to the new release while you watch its error rate; then 50/50,
 then 0/100. That's a **canary release**, and it's the same `modify-rule`
 call with different numbers. Exercise in §10.
 
-## 9. Run it
+## 9. Run it — step by step
 
-Lesson 12's AMI must exist; the state bootstrap from lesson 04 too.
+Before you start: lesson 12's AMI must exist (`12-golden-ami` applied),
+and the state bucket from lesson 04 (`04-remote-state-s3/bootstrap`).
+
+### 9.1 Create the infrastructure
 
 ```bash
 cd 16-blue-green-deployment
 cp backend.hcl.example backend.hcl
 cp terraform.tfvars.example terraform.tfvars
-# terraform.tfvars: github_repo, github_immutable_sub_prefix — same as lesson 15 §5
+# edit terraform.tfvars: github_repo = "<you>/three-tier-terraform"
+#                        github_immutable_sub_prefix = output of:
+#   gh api repos/<you>/three-tier-terraform/actions/oidc/customization/sub --jq .sub_claim_prefix
 terraform init -backend-config=backend.hcl
-terraform apply                                   # 53 resources, ~8 minutes
+terraform apply                                   # 54 resources, ~8 minutes
+terraform output -raw app_url                     # the site's address — keep it
+```
 
-# store the workflow's inputs as repository variables (all prefixed BG_)
+### 9.2 Give the workflow its settings
+
+The workflow reads ten values (role ARN, bucket, ASG and target-group
+names…) from **repository variables**, prefixed `BG_`. Copy them from
+Terraform's output in one go:
+
+```bash
 terraform output -json github_variables | python3 -c "
 import json, sys, subprocess
 for k, v in json.load(sys.stdin).items():
     subprocess.run(['gh', 'variable', 'set', k, '--body', v, '--repo', '<you>/three-tier-terraform'], check=True)"
-
-gh workflow run blue-green-deploy.yml -f action=bootstrap   # once, on a new stack
 ```
 
-Everything below is from live runs on the course account. The probe sent
-`/health` requests back to back (~4 per second) and logged each response
-with a millisecond timestamp — fine enough to see the exact moment of a
-cutover. **All times in this section are UTC** — the workflow log and the
-probe use the same clock, so you can line them up directly.
+To check them in the browser: your repo on GitHub → **Settings** →
+**Secrets and variables** → **Actions** → **Variables** tab. You should
+see ten `BG_…` entries.
 
-### 9.1 Bootstrap
+### 9.3 Bootstrap — put a first release on both colors
+
+Once, on a brand-new stack. In the browser: your repo → **Actions** tab →
+**Blue/green deploy (GitHub Actions)** (left list) → **Run workflow** →
+*action*: `bootstrap` → **Run workflow**. Or from a terminal:
+
+```bash
+gh workflow run blue-green-deploy.yml -f action=bootstrap
+```
+
+It takes about 4 minutes. Then check both colors with the test door:
 
 ```console
-Build and publish release ............. 13:24:59 → 13:25:10
-Bootstrap — same release on both colors 13:25:10 → 13:28:37
-conclusion: success
-
-$ curl $APP_URL/health                       → {"status":"ok","version":"3df945d"}
-$ curl -H "X-Color: blue"  $APP_URL/health   → {"status":"ok","version":"3df945d"}
-$ curl -H "X-Color: green" $APP_URL/health   → {"status":"ok","version":"3df945d"}
+$ curl $APP_URL/health
+{"status":"ok","version":"74423bd","color":"blue"}
+$ curl -H "X-Color: blue" $APP_URL/health
+{"status":"ok","version":"74423bd","color":"blue"}
+$ curl -H "X-Color: green" $APP_URL/health
+{"status":"ok","version":"3c5e059","color":"green"}
 ```
 
-The test door works: each color answers on its own, whatever the weights.
+(Real output from a later point in our runs — after bootstrap both colors
+report the same version.) Open `$APP_URL` in a browser: the footer badge
+shows the live color.
 
-### 9.2 Deploy — the cutover, measured
+### 9.4 Watch a deploy — the setup used for every number below
 
-`gh workflow run blue-green-deploy.yml -f action=deploy` with blue live:
+Use **two terminals and a browser**:
+
+| Where | What to run / open | What it shows |
+|---|---|---|
+| Terminal 1 | `bash scripts/probe.sh $(terraform output -raw app_url) 900` (from the repo root; [`scripts/probe.sh`](../scripts/probe.sh)) | Plays "users": sends `/health` requests back to back (~4/second) for 15 minutes, prints a UTC timestamp, HTTP status, version and color for each, and a summary at the end |
+| Terminal 2 or browser | `gh workflow run blue-green-deploy.yml -f action=deploy` — or Actions tab → Run workflow → *action*: `deploy` | Starts the deploy |
+| Browser | `$APP_URL` (footer badge), the CloudWatch dashboard, and the listener rule — see "Seeing which color is live" in §4 | The same switch, three different ways |
+
+The probe's traffic is also what makes the dashboard's request lines
+visible — the load balancer's own health checks don't count as requests.
+
+**Where each number below comes from:**
+
+| Number | Where you find it |
+|---|---|
+| `switched: … at 17:53:12` and the other step messages | GitHub → **Actions** → the run → job **blue-green** → expand step **Switch traffic to the new color** (and the steps around it) |
+| Step start/end times | Same page — hover a step, or the run's summary |
+| Requests, failures, the moment users moved | The probe's summary in Terminal 1 (the `changes` list) |
+| Requests per minute per color | CloudWatch → **Dashboards** → `three-tier-terraform-16-blue-green`, or CloudWatch → **All metrics** → **ApplicationELB** → **Per AppELB, per TG Metrics** → `RequestCount` for both `be-blue` and `be-green` (statistic **Sum**, period **1 minute**) |
+| Current weights | EC2 → **Load Balancers** → `three-tier-tf-16-alb` → **Listeners and rules** → HTTP:80 → rule for `/api/*, /health` |
+
+**All times are UTC** — GitHub and the probe both print UTC, so you can
+line them up directly.
+
+### 9.5 Result: a deploy, measured
+
+Blue live on `74423bd`, deploying `3c5e059` onto green. From the workflow
+log (GitHub → Actions → the run → job **blue-green**):
 
 ```console
-action=deploy release=d4db366 live=blue idle=green
-Install release on the IDLE color ........ 13:29:31 → 13:31:44   (all of green replaced at once)
-green serves d4db366 and reaches the database — users still on blue
-green has 2 healthy target(s)
-switched: blue=0 green=100 at 13:31:50
+action=deploy release=3c5e059 live=blue idle=green
+Install release on the IDLE color ...... 18:01:54 → 18:04:59   (green replaced while users stay on blue)
+Test the idle color .................... 18:04:59 → 18:05:04   (via the X-Color: green test door)
+switched: blue=0 green=100 at 18:05:07
+users on 3c5e059 after 33 requests
 ```
 
-What users saw:
+From the probe (Terminal 1), the lines around the switch and its summary:
 
 ```console
-probe: 3126 requests, 3126 × 200
-
-13:29:03.321  3df945d      ← every response from here …
-13:32:01.210  3df945d      ← … to here was the old release
-13:32:01.500  d4db366      ← every response from here on was the new one
+18:05:14.237 UTC  200  version=74423bd  color=blue
+18:05:14.472 UTC  200  version=3c5e059  color=green     ← first request served by green
+18:05:14.688 UTC  200  version=3c5e059  color=green
+...
+=== changes (first request that saw a new version/color):
+    18:01:20.893 UTC  version=74423bd  color=blue
+    18:05:14.472 UTC  version=3c5e059  color=green
 ```
 
-**One switch, no interleaving.** The last old response and the first new
-one are a single request apart, and the version never flips back. Compare
-[lesson 14 §5.3](../14-cicd-codepipeline/README.md): rolling deploy, `m1`
-and `m2` mixed for three minutes. That difference is the whole point of
-blue/green.
+**One switch, no interleaving**: every response before 18:05:14.472 came
+from blue, every one after from green — never back and forth. Compare
+[lesson 14 §5.3](../14-cicd-codepipeline/README.md): a rolling deploy
+served `m1` and `m2` mixed for three minutes. That difference is the whole
+point of blue/green.
 
-### 9.3 The cutover isn't instant — it takes ~11 seconds
+### 9.6 Result: rollback (switch-back), measured
 
-In §9.2 the workflow's switch call returned at 13:31:50, and the first
-user request served by the new release came at 13:32:01.5 — users moved
-about **11.5 seconds after the switch call**.
-The ALB applies a rule change to its fleet of nodes asynchronously;
-`modify-rule` returning means "accepted", not "in effect".
+Right after, green live, rolling back to blue (Actions → Run workflow →
+*action*: `switch-back`):
+
+```console
+action=switch-back release=3c5e059 live=green idle=blue
+blue is running 74423bd
+switched: blue=100 green=0 at 18:12:38
+users on 74423bd after 33 requests
+```
+
+```console
+=== changes:
+    18:05:14.472 UTC  version=3c5e059  color=green
+    18:12:44.848 UTC  version=74423bd  color=blue       ← back on blue
+=== probe summary: 4757 requests
+    4757 × HTTP 200
+```
+
+The whole switch-back run takes **about half a minute** — nothing is
+built, no instance is touched; the old release had been running on blue
+the entire time. Compare lesson 15's rollback: a full instance refresh,
+~7 minutes. And across the deploy *and* the rollback: **4,757 requests,
+every one answered with 200**.
+
+### 9.7 The cutover isn't instant — it takes 7-12 seconds
+
+In §9.5 the switch call returned at 18:05:07 and users moved at
+18:05:14.5 — about **7 seconds later**. The load balancer applies a rule
+change to its fleet of nodes asynchronously; `modify-rule` returning
+means "accepted", not "in effect". Across all our runs:
+
+| Run | Switch call (UTC) | First user on the new color (UTC) | Delay | Probe requests | Failed |
+|---|---|---|---|---|---|
+| deploy `d4db366` | 13:31:50 | 13:32:01.5 | 11.5 s | 3,126 | 0 |
+| switch-back | 13:42:40 | 13:42:51.0 | 11.0 s | 676 | 0 |
+| deploy `774bcee` | 13:48:09 | 13:48:19.6 | 10.6 s | 2,647 | **1** (see §9.9) |
+| deploy `74423bd` | 17:53:12 | 17:53:18.7 | 6.7 s | 2,576 | 0 |
+| deploy `3c5e059` | 18:05:07 | 18:05:14.5 | 7.5 s | 4,757 (with the next row) | 0 |
+| switch-back | 18:12:38 | 18:12:44.8 | 6.8 s | (same probe) | 0 |
 
 **Common pitfall: verifying with a fixed sleep.** A pipeline that sleeps a
 few seconds after the switch and then checks will fail randomly:
@@ -371,9 +454,9 @@ users not on d4db366
 ##[error]Process completed with exit code 1.
 ```
 
-…even though users were never affected (the probe in §9.2 saw 3126
-successes) — the check simply ran before the ALB had applied the change.
-**This lesson's workflow** polls instead of sleeping:
+…even though users were never affected — the check simply ran before the
+load balancer had applied the change. **This lesson's workflow** polls
+instead of sleeping:
 
 ```bash
 wait_for_version() {          # 20 consecutive responses with the new version, up to 90 s
@@ -387,85 +470,58 @@ wait_for_version() {          # 20 consecutive responses with the new version, u
 }
 ```
 
-In the deploy in §9.6 it logs `users on 774bcee after 33 requests` — about
-16 seconds of polling.
+It logs `users on <sha> after 33 requests` — about 16 seconds of polling.
 
-### 9.4 Rollback — switch back
+### 9.8 Terraform doesn't undo a deployment
 
-```console
-$ gh workflow run blue-green-deploy.yml -f action=switch-back
-blue has 2 healthy target(s)
-blue is running 3df945d
-switched: blue=100 green=0 at 13:42:40
-users on 3df945d after 34 requests
-Switch back (rollback) step: 13:42:37 → 13:43:11   (34 seconds)
-```
-
-```console
-probe: 676 requests, 676 × 200
-13:42:50.767  d4db366   ← last response from the new release
-13:42:51.025  3df945d   ← first response from the old one — and every one after
-```
-
-**34 seconds, nothing built, no instance touched** — the old release had
-been running on blue the whole time. Compare lesson 15's rollback: a full
-instance refresh, ~7 minutes.
-
-### 9.5 Terraform doesn't undo a deployment
-
-With **green** live — while `main.tf` still says blue gets 100 on creation:
+With **green** live — while `main.tf` says blue gets 100 when the rule is
+first created:
 
 ```console
 $ terraform plan
 No changes. Your infrastructure matches the configuration.
+```
 
-$ aws elbv2 describe-rules --rule-arns <weighted rule> \
-    --query 'Rules[0].Actions[0].ForwardConfig.TargetGroups[].[TargetGroupArn,Weight]'
-three-tier-tf-16-be-blue/...    0
-three-tier-tf-16-be-green/...   100
+Check the weights yourself: EC2 → Load Balancers → `three-tier-tf-16-alb`
+→ Listeners and rules → HTTP:80 → the `/api/*` rule shows
+`be-green 100 %, be-blue 0 %`. Or:
+
+```console
+$ aws elbv2 describe-rules --rule-arns "$BG_RULE_ARN" \
+    --query 'Rules[0].Actions[0].ForwardConfig.TargetGroups[].[TargetGroupArn,Weight]' --output text
+...targetgroup/three-tier-tf-16-be-blue/...    0
+...targetgroup/three-tier-tf-16-be-green/...   100
 ```
 
 That's `ignore_changes = [action]` doing its job. Remove it and this plan
 would show the rule being changed back to blue = 100 — an `apply` would
 silently roll every user back.
 
-### 9.6 Another deploy — and the one request that failed
+### 9.9 The one request that failed
 
-Blue live again, deploying `774bcee`:
-
-```console
-action=deploy release=774bcee live=blue idle=green
-Install release on the IDLE color ........ 13:45:32 → 13:48:02
-green serves 774bcee and reaches the database — users still on blue
-switched: blue=0 green=100 at 13:48:09
-users on 774bcee after 33 requests
-Roll the frontend ........................ 13:48:37 → 13:54:08
-Live: green (774bcee). Previous release still running on blue for instant switch-back.
-conclusion: success   (9 min total; the backend cutover itself ~3 min after the build)
-```
+In the `774bcee` deploy (table in §9.7), one probe request out of 2,647
+got no answer:
 
 ```console
-probe: 2647 requests, 2646 × 200, 1 × timeout
-
-13:48:16.169  3df945d  200
-13:48:19.304           000   ← sent 13:48:16.2, no answer within 3 s
-13:48:19.607  774bcee  200   ← new release from here on
+13:48:16.169 UTC  200  version=3df945d
+13:48:19.304 UTC  000                      ← sent 13:48:16.2, no answer within 3 s
+13:48:19.607 UTC  200  version=774bcee     ← new release from here on
 ```
 
-One request — the one in flight at the exact moment the ALB applied the
-new weights — timed out. The first deploy had none in 3126. A single
-in-flight request caught by a rule change is rare but possible; it's why
-real clients **retry idempotent requests** (GET `/health`, GET `/history`)
-rather than treat one timeout as an outage. Reported here instead of
-trimmed — "zero failures" would have been true once and false the next time.
+It was the request in flight at the exact moment the load balancer applied
+the new weights. Every other run had zero failures. A single in-flight
+request caught by a rule change is rare but possible — which is why real
+clients **retry idempotent requests** (GET `/health`, GET `/history`)
+instead of treating one timeout as an outage.
 
-### 9.7 Two more pitfalls
+### 9.10 Two more pitfalls
 
 **Common pitfall: a long health-check grace period freezes every refresh.**
 With `health_check_grace_period = 1500` (25 minutes — tempting, so new
 instances can wait patiently for a first release), **you'll see** an
 instance refresh sit at `InProgress 0%` while every target is already
-`healthy`:
+`healthy` (EC2 → **Auto Scaling groups** → the group → **Instance refresh**
+tab):
 
 ```console
 InProgress   0   Waiting for remaining instances to be available. For example:
@@ -478,10 +534,9 @@ to 25 minutes. **This lesson's code** uses 300 s, and instances wait at
 most 4 minutes for a release before failing and being replaced (lesson 15
 does the same). With 300 s, the same refresh took ~5.5 minutes.
 
-**Common pitfall: switching to an idle color with no release.**
-
-On a brand-new stack neither color has a release, so a `deploy` would test
-and switch to an empty fleet. The safety gate (`require_healthy`) refuses
+**Common pitfall: switching to an idle color with no release.** On a
+brand-new stack neither color has a release, so a `deploy` would test and
+switch to an empty fleet. The safety gate (`require_healthy`) refuses
 that, and `bootstrap` exists to seed both colors once.
 
 ## 10. Exercises
@@ -533,7 +588,7 @@ bash scripts/cleanup-everything.sh --yes --github-repo <you>/three-tier-terrafor
 ## If it breaks
 
 - **Refresh stuck at 0%, "insufficient data to evaluate its health"** —
-  instances still in their health-check grace period; see §9.7. Check
+  instances still in their health-check grace period; see §9.10. Check
   `health_check_grace_period` is 300, not more.
 - **Deploy fails at "Test the idle color"** — the idle color isn't running
   the new release. Check `aws s3 ls s3://<bucket>/current-<color>/` and one
@@ -546,4 +601,4 @@ bash scripts/cleanup-everything.sh --yes --github-repo <you>/three-tier-terrafor
 - **`Not authorized to perform sts:AssumeRoleWithWebIdentity`** — same as
   lesson 15 §3: branch not allowed, or `github_immutable_sub_prefix` empty.
 - **After `terraform apply`, users are back on blue** — someone removed
-  `ignore_changes = [action]` from the weighted rule (§9.5).
+  `ignore_changes = [action]` from the weighted rule (§9.8).
